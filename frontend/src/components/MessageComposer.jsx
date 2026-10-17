@@ -5,6 +5,7 @@ import SendButton from "./SendButton";
 function MessageComposer({ chat, fileUpload }) {
   const hasAttachments =
     fileUpload.documents.length > 0 || fileUpload.images.length > 0;
+  const canSend = chat.userInput.trim() !== "";
 
   return (
     <div className="border border-line rounded-md bg-paper max-w-2xl mx-auto w-full">
@@ -46,7 +47,7 @@ function MessageComposer({ chat, fileUpload }) {
           </label>
         </div>
 
-        <SendButton onClick={chat.handleSend} />
+        <SendButton onClick={chat.handleSend} disabled={!canSend} />
       </div>
 
       {fileUpload.error && (
