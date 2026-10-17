@@ -41,12 +41,16 @@ export default function useChat(fileUpload) {
 
     const fullHistory = [...messageHistory, newUserMessage];
 
+    const fileUuids = fullHistory
+      .flatMap((message) => message.documents ?? [])
+      .map((document) => document.file_uuid);
+
     const messages = formatMessagesForBackend(fullHistory);
 
     const response = await fetch("http://localhost:8000/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, use_rag: fileUpload.useRag }),
+      body: JSON.stringify({ messages, file_uuids: fileUuids }),
     });
 
     const data = await response.json();

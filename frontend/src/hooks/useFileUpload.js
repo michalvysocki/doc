@@ -15,7 +15,6 @@ export default function useFileUpload() {
   const fileInput = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [images, setImages] = useState([]);
-  const [useRag, setUseRag] = useState(false);
   const [error, setError] = useState(null);
 
   async function handleFile(file_data) {
@@ -112,8 +111,6 @@ export default function useFileUpload() {
     setDocuments,
     images,
     setImages,
-    useRag,
-    setUseRag,
     handleUpload,
     removeDocument,
     removeImage,

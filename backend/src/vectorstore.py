@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from typing import Any
 
 import chromadb
 
@@ -47,21 +48,31 @@ def add_to_collection(text: str, filename: str) -> str:
     return file_uuid
 
 
-def retrieve_chunks(query: str, n_results: int = 4) -> list[dict[str, any]]:
+def retrieve_chunks(
+    query: str, file_uuids: list[str], n_results: int = 4
+) -> list[dict[str, Any]]:
     """
     Takes a query, generates an embedding for it and searches
-    the vector database with this embedding.
+    the vector database with this embedding, only within the given documents.
 
     Args:
         query (str): a query for searching the database
+        file_uuids (list[str]): uuids of documents to search in
         n_results (int): number of chunks to retrieve
 
     Returns:
-        list[dict[str, any]]: returns list of dictionaries with results
+        list[dict[str, Any]]: returns list of dictionaries with results
     """
 
+    if not file_uuids:
+        return []
+
     query_vector = get_embeddings([query])
-    results = collection.query(query_embeddings=query_vector, n_results=n_results)
+    results = collection.query(
+        query_embeddings=query_vector,
+        n_results=n_results,
+        where={"file_uuid": {"$in": file_uuids}},
+    )
 
     documents = results.get("documents", [[]])[0]
     metadatas = results.get("metadatas", [[]])[0]
@@ -72,6 +83,27 @@ def retrieve_chunks(query: str, n_results: int = 4) -> list[dict[str, any]]:
         formatted_results.append({"text": doc, "metadata": meta, "distance": distance})
 
     return formatted_results
+
+
+def get_filenames(file_uuids: list[str]) -> list[str]:
+    """
+    Returns names of the documents with the given uuids.
+
+    Args:
+        file_uuids (list[str]): uuids of documents
+
+    Returns:
+        list[str]: sorted list of unique filenames
+    """
+
+    if not file_uuids:
+        return []
+
+    results = collection.get(
+        where={"file_uuid": {"$in": file_uuids}}, include=["metadatas"]
+    )
+
+    return sorted({meta["filename"] for meta in results["metadatas"]})
 
 
 def delete_document(file_uuid: str) -> bool:
@@ -99,7 +131,9 @@ def delete_document(file_uuid: str) -> bool:
 if __name__ == "__main__":
     query = "Czym jest architektura RAG i jakie problemy rozwiązuje?"
 
-    found = retrieve_chunks(query)
+    all_metadatas = collection.get(include=["metadatas"])["metadatas"]
+    file_uuids = list({meta["file_uuid"] for meta in all_metadatas})
+    found = retrieve_chunks(query, file_uuids)
     for i, result in enumerate(found, 1):
         print(f"\n Result: {i} | Distance: {result['distance']:.4f}")
         print(

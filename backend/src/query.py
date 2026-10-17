@@ -10,16 +10,22 @@ from markitdown import MarkItDown
 from pydantic import BaseModel
 
 from .openrouter import send_query
-from .vectorstore import add_to_collection, collection, delete_document, retrieve_chunks
+from .vectorstore import (
+    add_to_collection,
+    delete_document,
+    get_filenames,
+    retrieve_chunks,
+)
 
 
 class Message(BaseModel):
     role: str
     content: str | list[dict[str, Any]]
 
+
 class RequestContent(BaseModel):
     messages: list[Message]
-    use_rag: bool = False
+    file_uuids: list[str] = []
 
 
 app = FastAPI()
@@ -44,7 +50,9 @@ async def query(request_content: RequestContent):
     if not messages_list:
         raise HTTPException(status_code=400, detail="Brak wiadomości w zapytaniu")
 
-    if request_content.use_rag:
+    file_uuids = request_content.file_uuids
+
+    if file_uuids:
         last_message = messages_list[-1]
         last_user_text = ""
 
@@ -57,27 +65,29 @@ async def query(request_content: RequestContent):
                     last_user_text = block.get("text", "")
                     break
 
-        if collection.count() > 0:
-            found_chunks = retrieve_chunks(query=last_user_text)
+        found_chunks = retrieve_chunks(query=last_user_text, file_uuids=file_uuids)
+        filenames = get_filenames(file_uuids)
 
-            if found_chunks:
-                context_texts = []
-                for chunk in found_chunks:
-                    filename = chunk["metadata"].get("filename", "Unknown document")
-                    context_texts.append(
-                        f"--- Fragment of the document: {filename} ---\n{chunk['text']}"
-                    )
+        attached_list = "\n".join(f"- {name}" for name in filenames)
 
-                full_context = "\n\n".join(context_texts)
+        context_texts = []
+        for chunk in found_chunks:
+            filename = chunk["metadata"].get("filename", "Unknown document")
+            context_texts.append(
+                f"--- Fragment of the document: {filename} ---\n{chunk['text']}"
+            )
+        full_context = "\n\n".join(context_texts)
 
-                system_prompt = (
-                    "You are an AI assistant and teacher. Answer the user's questions based on "
-                    "the fragments of the documents below. If there is no aswer for the question in the documents "
-                    "tell about it straight and answer using your basic knowledge.\n\n"
-                    f"KNOWLEDGE BASE DOCUMENTS:\n{full_context}"
-                )
+        system_prompt = (
+            "You are an AI assistant and teacher. The user attached the following "
+            f"documents to this conversation:\n{attached_list}\n\n"
+            "Answer the user's questions based on the document fragments below. "
+            "If the answer is not in the documents, say so directly and answer "
+            "using your general knowledge.\n\n"
+            f"DOCUMENT FRAGMENTS:\n{full_context}"
+        )
 
-                messages_list.insert(0, {"role": "system", "content": system_prompt})
+        messages_list.insert(0, {"role": "system", "content": system_prompt})
 
     result = send_query(messages_list)
 
