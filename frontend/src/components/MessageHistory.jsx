@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -5,9 +6,19 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import AttachmentCard from "./AttachmentCard";
 import getFileLabel from "../utils/fileLabel";
 
-function MessageHistory({ messageHistory }) {
+function MessageHistory({ messageHistory, isLoading }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, [messageHistory, isLoading]);
+
   return (
-    <div className="flex flex-col gap-4 p-4 max-w-2xl mx-auto w-full flex-1 overflow-y-auto">
+    <div
+      ref={containerRef}
+      className="flex flex-col gap-4 p-4 max-w-2xl mx-auto w-full flex-1 overflow-y-auto"
+    >
       {messageHistory.map((message, index) =>
         message.role === "user" ? (
           <div
@@ -61,6 +72,14 @@ function MessageHistory({ messageHistory }) {
             </Markdown>
           </div>
         ),
+      )}
+
+      {isLoading && (
+        <div className="flex gap-1 py-2">
+          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce" />
+          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:150ms]" />
+          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:300ms]" />
+        </div>
       )}
     </div>
   );

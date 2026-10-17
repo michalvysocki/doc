@@ -5,7 +5,7 @@ import SendButton from "./SendButton";
 function MessageComposer({ chat, fileUpload }) {
   const hasAttachments =
     fileUpload.documents.length > 0 || fileUpload.images.length > 0;
-  const canSend = chat.userInput.trim() !== "";
+  const canSend = chat.userInput.trim() !== "" && !chat.isLoading;
 
   return (
     <div className="border border-line rounded-md bg-paper max-w-2xl mx-auto w-full">
@@ -38,6 +38,10 @@ function MessageComposer({ chat, fileUpload }) {
 
       {fileUpload.error && (
         <p className="text-warn text-xs px-4 pb-2">{fileUpload.error}</p>
+      )}
+
+      {chat.error && (
+        <p className="text-warn text-xs px-4 pb-2">{chat.error}</p>
       )}
     </div>
   );

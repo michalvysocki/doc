@@ -9,7 +9,7 @@ from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 from pydantic import BaseModel
 
-from .openrouter import send_query
+from .openrouter import OpenRouterError, send_query
 from .vectorstore import (
     add_to_collection,
     delete_document,
@@ -65,7 +65,10 @@ async def query(request_content: RequestContent):
                     last_user_text = block.get("text", "")
                     break
 
-        found_chunks = retrieve_chunks(query=last_user_text, file_uuids=file_uuids)
+        try:
+            found_chunks = retrieve_chunks(query=last_user_text, file_uuids=file_uuids)
+        except OpenRouterError as e:
+            raise HTTPException(status_code=502, detail=str(e)) from e
         filenames = get_filenames(file_uuids)
 
         attached_list = "\n".join(f"- {name}" for name in filenames)
@@ -89,7 +92,10 @@ async def query(request_content: RequestContent):
 
         messages_list.insert(0, {"role": "system", "content": system_prompt})
 
-    result = send_query(messages_list)
+    try:
+        result = send_query(messages_list)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
     return result
 
@@ -149,7 +155,10 @@ async def parse_file(file: UploadFile):
             status_code=400, detail="Empty file or no readable text found"
         )
 
-    file_uuid = add_to_collection(text_content, file.filename)
+    try:
+        file_uuid = add_to_collection(text_content, file.filename)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
     return {"filename": file.filename, "file_uuid": file_uuid}
 

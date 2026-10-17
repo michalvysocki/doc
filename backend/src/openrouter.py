@@ -16,45 +16,70 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
 
 
-def send_query(messages: list[dict[str, Any]]):
-    response = requests.post(
-        url=URL,
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+class OpenRouterError(Exception):
+    """Raised when a request to OpenRouter fails or returns an unexpected response."""
+
+
+def _post_to_openrouter(
+    url: str, payload: dict[str, Any], timeout: int
+) -> dict[str, Any]:
+    """
+    Sends a POST request to OpenRouter and returns the parsed JSON response.
+
+    Raises:
+        OpenRouterError: if the request fails or OpenRouter returns an error status
+    """
+
+    try:
+        response = requests.post(
+            url=url,
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps(payload),
+            timeout=timeout,
+        )
+        data = response.json()
+    except requests.RequestException as e:
+        raise OpenRouterError(f"Request to OpenRouter failed: {e}") from e
+
+    if not response.ok:
+        message = data.get("error", {}).get("message", "Unknown error")
+        raise OpenRouterError(f"OpenRouter returned {response.status_code}: {message}")
+
+    return data
+
+
+def send_query(messages: list[dict[str, Any]]) -> str:
+    data = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": messages,
+            "plugins": [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
         },
-        data=json.dumps(
-            {
-                "model": MODEL,
-                "messages": messages,
-                "plugins": [
-                    {
-                        "id": "file-parser",
-                        "pdf": {
-                            "engine": "cloudflare-ai",
-                        },
-                    }
-                ],
-            }
-        ),
+        timeout=120,
     )
 
-    print(response.json())
-    return response.json()["choices"][0]["message"]["content"]
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
 
 
 def get_embeddings(texts: list[str]) -> list[list[float]]:
-    response = requests.post(
-        url=EMBEDDING_URL,
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        data=json.dumps({"model": EMBEDDING_MODEL, "input": texts}),
+    data = _post_to_openrouter(
+        EMBEDDING_URL, {"model": EMBEDDING_MODEL, "input": texts}, timeout=60
     )
-    
-    sorted_data = sorted(response.json()["data"], key=lambda x: x["index"])
-    
-    return [item["embedding"] for item in sorted_data]
+
+    try:
+        sorted_data = sorted(data["data"], key=lambda x: x["index"])
+        return [item["embedding"] for item in sorted_data]
+    except (KeyError, TypeError) as e:
+        raise OpenRouterError(
+            "Unexpected embedding response format from OpenRouter"
+        ) from e
 
 
 if __name__ == "__main__":
@@ -80,5 +105,5 @@ if __name__ == "__main__":
     gwarantuje, że model otrzyma właściwy kontekst i odpowie bezbłędnie.
     """
 
-    result = get_embeddings(sample_text)
+    result = get_embeddings([sample_text])
     print(len(result))

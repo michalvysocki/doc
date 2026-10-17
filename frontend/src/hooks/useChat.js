@@ -3,6 +3,8 @@ import { useState } from "react";
 export default function useChat(fileUpload) {
   const [userInput, setUserInput] = useState("");
   const [messageHistory, updateMessageHistory] = useState([]);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   function formatMessagesForBackend(history) {
     return history.map((message) => {
@@ -47,19 +49,45 @@ export default function useChat(fileUpload) {
 
     const messages = formatMessagesForBackend(fullHistory);
 
-    const response = await fetch("http://localhost:8000/query", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, file_uuids: fileUuids }),
-    });
+    setError(null);
+    setIsLoading(true);
 
-    const data = await response.json();
-    console.log(data);
-    updateMessageHistory((prev) => [
-      ...prev,
-      { role: "assistant", text: data },
-    ]);
+    try {
+      const response = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages, file_uuids: fileUuids }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof errorData.detail === "string"
+            ? errorData.detail
+            : `Error while sending message: ${response.status}`,
+        );
+      }
+
+      const data = await response.json();
+
+      updateMessageHistory((prev) => [
+        ...prev,
+        { role: "assistant", text: data },
+      ]);
+    } catch (error) {
+      console.error("Error while sending message: ", error);
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  return { userInput, setUserInput, messageHistory, handleSend };
+  return {
+    userInput,
+    setUserInput,
+    messageHistory,
+    handleSend,
+    error,
+    isLoading,
+  };
 }
