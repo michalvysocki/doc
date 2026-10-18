@@ -6,7 +6,7 @@ Application for learning from documentation and research papers using AI. It gen
 
 - Backend: FastAPI (Python)
 - Frontend: React + Vite (TypeScript)
-- Database: PostgreSQL and Vector DB (Qdrant/Chroma)
+- Database: PostgreSQL + pgvector
 - Infrastructure: Docker
 
 ## Project Structure

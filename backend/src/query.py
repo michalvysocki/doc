@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from .openrouter import OpenRouterError, send_query
 from .vectorstore import (
-    add_to_collection,
+    add_document,
     delete_document,
     get_filenames,
     retrieve_chunks,
@@ -157,7 +157,7 @@ async def parse_file(file: UploadFile):
         )
 
     try:
-        file_uuid = add_to_collection(text_content, file.filename)
+        file_uuid = add_document(text_content, file.filename)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

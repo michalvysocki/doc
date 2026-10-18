@@ -1,8 +1,6 @@
 import uuid
-from pathlib import Path
 from typing import Any
 
-import chromadb
 from sqlalchemy import delete, select
 
 from .database import SessionLocal
@@ -10,12 +8,8 @@ from .indexing import chunk_text
 from .models import Chunk, Document
 from .openrouter import get_embeddings
 
-chroma_dir = Path(__file__).resolve().parent.parent / ".chroma"
-client = chromadb.PersistentClient(chroma_dir)
-collection = client.get_or_create_collection(name="main")
 
-
-def add_to_collection(text: str, filename: str) -> str:
+def add_document(text: str, filename: str) -> str:
     """
     Divides text into chunks, generates embeddings and saves
     the document with its chunks in the database.
@@ -139,8 +133,9 @@ def delete_document(file_uuid: uuid.UUID) -> bool:
 if __name__ == "__main__":
     query = "Czym jest architektura RAG i jakie problemy rozwiązuje?"
 
-    all_metadatas = collection.get(include=["metadatas"])["metadatas"]
-    file_uuids = list({meta["file_uuid"] for meta in all_metadatas})
+    with SessionLocal() as session:
+        file_uuids = list(session.scalars(select(Document.id)).all())
+
     found = retrieve_chunks(query, file_uuids)
     for i, result in enumerate(found, 1):
         print(f"\n Result: {i} | Distance: {result['distance']:.4f}")
