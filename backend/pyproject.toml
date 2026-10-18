@@ -7,16 +7,20 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.0",
     "chromadb>=1.5.9",
     "fastapi>=0.135.2",
     "llama-index>=0.14.23",
     "llama-index-readers-file>=0.6.0",
     "markitdown[docx]>=0.1.7",
+    "pgvector>=0.5.1",
+    "psycopg[binary]>=3.3.6",
     "pydantic>=2.12.5",
     "pypdf>=6.15.0",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.32",
     "requests>=2.33.0",
+    "sqlalchemy>=2.0.51",
     "uvicorn>=0.42.0",
 ]
 

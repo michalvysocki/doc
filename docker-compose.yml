@@ -1,19 +1,41 @@
 services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      - POSTGRES_USER=doc
+      - POSTGRES_PASSWORD=doc
+      - POSTGRES_DB=doc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doc -d doc"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
   backend:
     build: ./backend
-    ports: 
+    ports:
       - "8000:8000"
     env_file:
       - ./backend/.env
     environment:
       - WATCHFILES_FORCE_POLLING=true
+      - DATABASE_URL=postgresql+psycopg://doc:doc@db:5432/doc
     volumes:
       - ./backend:/app
       - /app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
   frontend:
     build: ./frontend
-    ports: 
+    ports:
       - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
+
+volumes:
+  pgdata:

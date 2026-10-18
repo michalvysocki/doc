@@ -3,8 +3,11 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
+from sqlalchemy import delete, select
 
+from .database import SessionLocal
 from .indexing import chunk_text
+from .models import Chunk, Document
 from .openrouter import get_embeddings
 
 chroma_dir = Path(__file__).resolve().parent.parent / ".chroma"
@@ -14,50 +17,46 @@ collection = client.get_or_create_collection(name="main")
 
 def add_to_collection(text: str, filename: str) -> str:
     """
-    Divides text into chunks, generates embeddings and metadata
-    and adds it to a collection.
+    Divides text into chunks, generates embeddings and saves
+    the document with its chunks in the database.
 
     Args:
-        text (str): text to chunk and add to collection
+        text (str): text to chunk and save
         filename (str): file's name
 
     Returns:
-        str: returns file's uuid
+        str: returns document's uuid
     """
 
     chunks = chunk_text(text)
-
-    ids = []
-    metadatas = []
-
-    file_uuid = str(uuid.uuid4())[:8]
     embeddings = get_embeddings(chunks)
 
-    for i, _ in enumerate(chunks):
-        chunk_id = f"{file_uuid}_chunk_{i}"
-
-        ids.append(chunk_id)
-        metadatas.append(
-            {"filename": filename, "chunk_index": i, "file_uuid": file_uuid}
-        )
-
-    collection.add(
-        ids=ids, embeddings=embeddings, documents=chunks, metadatas=metadatas
+    document_id = uuid.uuid4()
+    document = Document(
+        id=document_id,
+        filename=filename,
+        chunks=[
+            Chunk(chunk_index=i, text=chunk, embedding=embedding)
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True))
+        ],
     )
 
-    return file_uuid
+    with SessionLocal() as session, session.begin():
+        session.add(document)
+
+    return str(document_id)
 
 
 def retrieve_chunks(
-    query: str, file_uuids: list[str], n_results: int = 4
+    query: str, file_uuids: list[uuid.UUID], n_results: int = 4
 ) -> list[dict[str, Any]]:
     """
-    Takes a query, generates an embedding for it and searches
-    the vector database with this embedding, only within the given documents.
+    Takes a query, generates an embedding for it and finds the most similar
+    chunks, only within the given documents.
 
     Args:
         query (str): a query for searching the database
-        file_uuids (list[str]): uuids of documents to search in
+        file_uuids (list[uuid.UUID]): uuids of documents to search in
         n_results (int): number of chunks to retrieve
 
     Returns:
@@ -67,65 +66,74 @@ def retrieve_chunks(
     if not file_uuids:
         return []
 
-    query_vector = get_embeddings([query])
-    results = collection.query(
-        query_embeddings=query_vector,
-        n_results=n_results,
-        where={"file_uuid": {"$in": file_uuids}},
+    query_vector = get_embeddings([query])[0]
+    distance = Chunk.embedding.cosine_distance(query_vector).label("distance")
+
+    statement = (
+        select(Chunk.text, Chunk.chunk_index, Document.id, Document.filename, distance)
+        .join(Chunk.document)
+        .where(Chunk.document_id.in_(file_uuids))
+        .order_by(distance)
+        .limit(n_results)
     )
 
-    documents = results.get("documents", [[]])[0]
-    metadatas = results.get("metadatas", [[]])[0]
-    distances = results.get("distances", [[]])[0]
+    with SessionLocal() as session:
+        rows = session.execute(statement).all()
 
-    formatted_results = []
-    for doc, meta, distance in zip(documents, metadatas, distances):
-        formatted_results.append({"text": doc, "metadata": meta, "distance": distance})
+    return [
+        {
+            "text": row.text,
+            "metadata": {
+                "filename": row.filename,
+                "chunk_index": row.chunk_index,
+                "file_uuid": str(row.id),
+            },
+            "distance": row.distance,
+        }
+        for row in rows
+    ]
 
-    return formatted_results
 
-
-def get_filenames(file_uuids: list[str]) -> list[str]:
+def get_filenames(file_uuids: list[uuid.UUID]) -> list[str]:
     """
     Returns names of the documents with the given uuids.
 
     Args:
-        file_uuids (list[str]): uuids of documents
+        file_uuids (list[uuid.UUID]): uuids of documents
 
     Returns:
-        list[str]: sorted list of unique filenames
+        list[str]: sorted list of filenames
     """
 
     if not file_uuids:
         return []
 
-    results = collection.get(
-        where={"file_uuid": {"$in": file_uuids}}, include=["metadatas"]
+    statement = (
+        select(Document.filename)
+        .where(Document.id.in_(file_uuids))
+        .order_by(Document.filename)
     )
 
-    return sorted({meta["filename"] for meta in results["metadatas"]})
+    with SessionLocal() as session:
+        return list(session.scalars(statement).all())
 
 
-def delete_document(file_uuid: str) -> bool:
+def delete_document(file_uuid: uuid.UUID) -> bool:
     """
-    Checks if a document is in the vector store and
-    deletes all chunks of file with a specified uuid.
+    Deletes the document with a specified uuid. Its chunks are deleted
+    by the database (ON DELETE CASCADE).
 
     Args:
-        file_uuid (str): file's unique identifier
+        file_uuid (uuid.UUID): document's unique identifier
 
     Returns:
-        bool: returns True if executed correctly or False if file is not found
+        bool: returns True if deleted or False if document is not found
     """
 
-    existing_data = collection.get(where={"file_uuid": file_uuid}, include=[])
+    with SessionLocal() as session, session.begin():
+        result = session.execute(delete(Document).where(Document.id == file_uuid))
 
-    if not existing_data or len(existing_data.get("ids", [])) == 0:
-        return False
-
-    collection.delete(where={"file_uuid": file_uuid})
-
-    return True
+    return result.rowcount > 0
 
 
 if __name__ == "__main__":

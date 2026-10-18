@@ -1,6 +1,7 @@
 import io
 import os
 import tempfile
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -25,7 +26,7 @@ class Message(BaseModel):
 
 class RequestContent(BaseModel):
     messages: list[Message]
-    file_uuids: list[str] = []
+    file_uuids: list[uuid.UUID] = []
 
 
 app = FastAPI()
@@ -164,7 +165,7 @@ async def parse_file(file: UploadFile):
 
 
 @app.delete("/delete_file/{file_uuid}")
-async def delete_file(file_uuid: str):
+async def delete_file(file_uuid: uuid.UUID):
     is_deleted = delete_document(file_uuid)
 
     if not is_deleted:
