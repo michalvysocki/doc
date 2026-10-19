@@ -10,7 +10,9 @@ from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 from pydantic import BaseModel
 
-from .openrouter import OpenRouterError, send_query
+from .courses import get_course, save_course
+from .openrouter import OpenRouterError, generate_topic_map, send_query
+from .schemas import CourseCreate, CourseOut
 from .vectorstore import (
     add_document,
     delete_document,
@@ -174,3 +176,25 @@ async def delete_file(file_uuid: uuid.UUID):
         )
 
     return {"message": "File deleted successfully", "file_uuid": file_uuid}
+
+
+@app.post("/courses", status_code=201, response_model=CourseOut)
+def create_course(request: CourseCreate):
+    try:
+        topic_map = generate_topic_map(request.initial_prompt)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    course_id = save_course(request.initial_prompt, topic_map)
+
+    return get_course(course_id)
+
+
+@app.get("/courses/{course_id}", response_model=CourseOut)
+def read_course(course_id: uuid.UUID):
+    course = get_course(course_id)
+
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return course

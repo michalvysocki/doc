@@ -5,6 +5,9 @@ from typing import Any
 
 import requests
 from dotenv import load_dotenv
+from pydantic import ValidationError
+
+from .schemas import TopicMap
 
 current_dir = Path(__file__).resolve().parent
 load_dotenv(current_dir.parent / ".env")
@@ -14,6 +17,15 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
+
+TOPIC_MAP_SYSTEM_PROMPT = (
+    "You are an expert teacher designing a course. Based on the user's request, "
+    "create a map of topics the learner should study, ordered from the basics "
+    "to advanced topics. Use at most 3 levels of nesting. Each topic should be "
+    "specific enough to study in a single session. Do not number the topic "
+    "titles. Write titles and descriptions in the same language as the user's "
+    "request."
+)
 
 
 class OpenRouterError(Exception):
@@ -80,6 +92,34 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
         raise OpenRouterError(
             "Unexpected embedding response format from OpenRouter"
         ) from e
+
+
+def generate_topic_map(initial_prompt: str) -> TopicMap:
+    data = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
+                {"role": "user", "content": initial_prompt},
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "topic_map",
+                    "strict": True,
+                    "schema": TopicMap.model_json_schema(),
+                },
+            },
+        },
+        timeout=180,
+    )
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+        return TopicMap.model_validate_json(content)
+    except (KeyError, IndexError, ValidationError) as e:
+        raise OpenRouterError("Model returned an invalid topic map") from e
 
 
 if __name__ == "__main__":
