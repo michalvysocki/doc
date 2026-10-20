@@ -1,8 +1,18 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+
+class Message(BaseModel):
+    role: str
+    content: str | list[dict[str, Any]]
+
+
+class RequestContent(BaseModel):
+    messages: list[Message]
+    file_uuids: list[uuid.UUID] = []
 
 
 class TopicNode(BaseModel):

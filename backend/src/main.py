@@ -2,13 +2,11 @@ import io
 import os
 import tempfile
 import uuid
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
-from pydantic import BaseModel
 
 from .courses import (
     create_explanation,
@@ -19,24 +17,19 @@ from .courses import (
     save_course,
 )
 from .openrouter import OpenRouterError, generate_topic_map, send_query
-from .schemas import CourseCreate, CourseOut, CourseSummary, TopicDetail
+from .schemas import (
+    CourseCreate,
+    CourseOut,
+    CourseSummary,
+    RequestContent,
+    TopicDetail,
+)
 from .vectorstore import (
     add_document,
     delete_document,
     get_filenames,
     retrieve_chunks,
 )
-
-
-class Message(BaseModel):
-    role: str
-    content: str | list[dict[str, Any]]
-
-
-class RequestContent(BaseModel):
-    messages: list[Message]
-    file_uuids: list[uuid.UUID] = []
-
 
 app = FastAPI()
 
@@ -173,16 +166,12 @@ def parse_file(file: UploadFile):
     return {"filename": file.filename, "file_uuid": file_uuid}
 
 
-@app.delete("/delete_file/{file_uuid}")
+@app.delete("/delete_file/{file_uuid}", status_code=204)
 def delete_file(file_uuid: uuid.UUID):
-    is_deleted = delete_document(file_uuid)
-
-    if not is_deleted:
+    if not delete_document(file_uuid):
         raise HTTPException(
             status_code=404, detail=f"File with UUID {file_uuid} was not found"
         )
-
-    return {"message": "File deleted successfully", "file_uuid": file_uuid}
 
 
 @app.get("/courses", response_model=list[CourseSummary])
