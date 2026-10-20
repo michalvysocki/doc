@@ -43,3 +43,9 @@ class CourseOut(BaseModel):
     initial_prompt: str
     created_at: datetime
     topics: list[TopicOut]
+
+
+class CourseSummary(BaseModel):
+    id: uuid.UUID
+    title: str
+    created_at: datetime

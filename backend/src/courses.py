@@ -1,10 +1,10 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from .database import SessionLocal
 from .models import Course, Topic
-from .schemas import CourseOut, TopicMap, TopicNode, TopicOut
+from .schemas import CourseOut, CourseSummary, TopicMap, TopicNode, TopicOut
 
 
 def _flatten_topics(
@@ -96,3 +96,36 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
             created_at=course.created_at,
             topics=roots,
         )
+
+
+def list_courses() -> list[CourseSummary]:
+    """
+    Returns all courses without topics, newest first.
+    """
+
+    statement = select(Course.id, Course.title, Course.created_at).order_by(
+        Course.created_at.desc()
+    )
+
+    with SessionLocal() as session:
+        rows = session.execute(statement).all()
+
+    return [
+        CourseSummary(id=row.id, title=row.title, created_at=row.created_at)
+        for row in rows
+    ]
+
+
+def delete_course(course_id: uuid.UUID) -> bool:
+    """
+    Deletes a course. Its topics and documents are deleted
+    by the database (ON DELETE CASCADE).
+
+    Returns:
+        bool: True if deleted, False if the course does not exist
+    """
+
+    with SessionLocal() as session, session.begin():
+        result = session.execute(delete(Course).where(Course.id == course_id))
+
+    return result.rowcount > 0
