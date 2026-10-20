@@ -27,6 +27,16 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "request."
 )
 
+TOPIC_EXPLANATION_SYSTEM_PROMPT = (
+    "You are an expert teacher writing a lesson about one topic of a course. "
+    "Explain the topic clearly for a learner using Markdown with headings, "
+    "lists and examples. For technical topics include short code examples in "
+    "fenced code blocks. Aim for 500-1000 words. If the topic has subtopics, "
+    "give only an overview of them, because each subtopic has its own lesson. "
+    "Do not start with a heading that repeats the topic title. Write in the "
+    "same language as the topic title."
+)
+
 
 class OpenRouterError(Exception):
     """Raised when a request to OpenRouter fails or returns an unexpected response."""
@@ -120,6 +130,47 @@ def generate_topic_map(initial_prompt: str) -> TopicMap:
         return TopicMap.model_validate_json(content)
     except (KeyError, IndexError, ValidationError) as e:
         raise OpenRouterError("Model returned an invalid topic map") from e
+
+
+def generate_topic_explanation(
+    course_title: str,
+    path: list[str],
+    title: str,
+    description: str,
+    subtopics: list[str],
+) -> str:
+    context_lines = [
+        f"Course: {course_title}",
+        f"Topic path: {' > '.join([*path, title])}",
+        f"Topic: {title}",
+        f"Topic description: {description}",
+    ]
+    if subtopics:
+        context_lines.append(
+            "Subtopics covered in separate lessons: " + ", ".join(subtopics)
+        )
+
+    data = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": TOPIC_EXPLANATION_SYSTEM_PROMPT},
+                {"role": "user", "content": "\n".join(context_lines)},
+            ],
+        },
+        timeout=180,
+    )
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+
+    if not content:
+        raise OpenRouterError("Model returned an empty explanation")
+
+    return content
 
 
 if __name__ == "__main__":

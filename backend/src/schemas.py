@@ -49,3 +49,19 @@ class CourseSummary(BaseModel):
     id: uuid.UUID
     title: str
     created_at: datetime
+
+
+class TopicLink(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
+class TopicDetail(BaseModel):
+    id: uuid.UUID
+    course_id: uuid.UUID
+    course_title: str
+    path: list[TopicLink]
+    title: str
+    description: str
+    explanation: str | None
+    subtopics: list[TopicLink]

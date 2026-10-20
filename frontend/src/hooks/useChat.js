@@ -36,10 +36,9 @@ export default function useChat(fileUpload) {
       documents: fileUpload.documents,
     };
     updateMessageHistory((prev) => [...prev, newUserMessage]);
-    setUserInput("")
-    fileUpload.setDocuments([])
-    fileUpload.setImages([])
-    
+    setUserInput("");
+    fileUpload.setDocuments([]);
+    fileUpload.setImages([]);
 
     const fullHistory = [...messageHistory, newUserMessage];
 

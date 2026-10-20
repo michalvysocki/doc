@@ -7,4 +7,4 @@ export function getFileLabel(mimeType) {
   return "FILE";
 }
 
-export default getFileLabel
+export default getFileLabel;

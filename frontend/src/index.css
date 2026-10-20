@@ -2,11 +2,11 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --color-paper: #FAFAF8;
-  --color-ink: #1C1B19;
-  --color-line: #E4E2DC;
-  --color-accent: #2B5D4F;
-  --color-warn: #B3542B;
+  --color-paper: #fafaf8;
+  --color-ink: #1c1b19;
+  --color-line: #e4e2dc;
+  --color-accent: #2b5d4f;
+  --color-warn: #b3542b;
 }
 
 body {

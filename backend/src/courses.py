@@ -1,10 +1,19 @@
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from .database import SessionLocal
 from .models import Course, Topic
-from .schemas import CourseOut, CourseSummary, TopicMap, TopicNode, TopicOut
+from .openrouter import generate_topic_explanation
+from .schemas import (
+    CourseOut,
+    CourseSummary,
+    TopicDetail,
+    TopicLink,
+    TopicMap,
+    TopicNode,
+    TopicOut,
+)
 
 
 def _flatten_topics(
@@ -129,3 +138,80 @@ def delete_course(course_id: uuid.UUID) -> bool:
         result = session.execute(delete(Course).where(Course.id == course_id))
 
     return result.rowcount > 0
+
+
+def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
+    """
+    Loads a topic with its course title, path of parent topics and subtopics.
+
+    Returns:
+        TopicDetail | None: the topic, or None if it does not exist
+    """
+
+    with SessionLocal() as session:
+        topic = session.get(Topic, topic_id)
+        if topic is None:
+            return None
+
+        course = session.get(Course, topic.course_id)
+        course_topics = session.scalars(
+            select(Topic)
+            .where(Topic.course_id == topic.course_id)
+            .order_by(Topic.position)
+        ).all()
+
+        topics_by_id = {t.id: t for t in course_topics}
+
+        path = []
+        parent_id = topic.parent_id
+        while parent_id is not None:
+            parent = topics_by_id[parent_id]
+            path.insert(0, TopicLink(id=parent.id, title=parent.title))
+            parent_id = parent.parent_id
+
+        subtopics = [
+            TopicLink(id=t.id, title=t.title)
+            for t in course_topics
+            if t.parent_id == topic.id
+        ]
+
+        return TopicDetail(
+            id=topic.id,
+            course_id=course.id,
+            course_title=course.title,
+            path=path,
+            title=topic.title,
+            description=topic.description,
+            explanation=topic.explanation,
+            subtopics=subtopics,
+        )
+
+
+def create_explanation(topic_id: uuid.UUID) -> TopicDetail | None:
+    """
+    Generates and saves an explanation for a topic, unless it already has one.
+
+    Returns:
+        TopicDetail | None: the topic with explanation, or None if it does not exist
+    """
+
+    topic = get_topic(topic_id)
+    if topic is None:
+        return None
+    if topic.explanation is not None:
+        return topic
+
+    explanation = generate_topic_explanation(
+        course_title=topic.course_title,
+        path=[link.title for link in topic.path],
+        title=topic.title,
+        description=topic.description,
+        subtopics=[link.title for link in topic.subtopics],
+    )
+
+    with SessionLocal() as session, session.begin():
+        session.execute(
+            update(Topic).where(Topic.id == topic_id).values(explanation=explanation)
+        )
+
+    return topic.model_copy(update={"explanation": explanation})

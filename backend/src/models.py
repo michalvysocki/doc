@@ -43,6 +43,7 @@ class Topic(Base):
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text)
     position: Mapped[int]
+    explanation: Mapped[str | None] = mapped_column(Text)
 
 
 class Document(Base):

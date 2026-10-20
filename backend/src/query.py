@@ -10,9 +10,16 @@ from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 from pydantic import BaseModel
 
-from .courses import delete_course, get_course, list_courses, save_course
+from .courses import (
+    create_explanation,
+    delete_course,
+    get_course,
+    get_topic,
+    list_courses,
+    save_course,
+)
 from .openrouter import OpenRouterError, generate_topic_map, send_query
-from .schemas import CourseCreate, CourseOut, CourseSummary
+from .schemas import CourseCreate, CourseOut, CourseSummary, TopicDetail
 from .vectorstore import (
     add_document,
     delete_document,
@@ -209,3 +216,26 @@ def read_course(course_id: uuid.UUID):
 def remove_course(course_id: uuid.UUID):
     if not delete_course(course_id):
         raise HTTPException(status_code=404, detail="Course not found")
+
+
+@app.get("/topics/{topic_id}", response_model=TopicDetail)
+def read_topic(topic_id: uuid.UUID):
+    topic = get_topic(topic_id)
+
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return topic
+
+
+@app.post("/topics/{topic_id}/explanation", response_model=TopicDetail)
+def post_topic_explanation(topic_id: uuid.UUID):
+    try:
+        topic = create_explanation(topic_id)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return topic
