@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "../utils/api";
 
-export default function useCourse(courseId) {
+export default function useCourse(courseId, refreshKey) {
   const [result, setResult] = useState({
     courseId: null,
     course: null,
@@ -24,7 +24,7 @@ export default function useCourse(courseId) {
     return () => {
       ignore = true;
     };
-  }, [courseId]);
+  }, [courseId, refreshKey]);
 
   const isCurrent = result.courseId === courseId;
 

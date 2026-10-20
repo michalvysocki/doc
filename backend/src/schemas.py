@@ -34,6 +34,7 @@ class TopicOut(BaseModel):
     id: uuid.UUID
     title: str
     description: str
+    has_explanation: bool
     children: list["TopicOut"]
 
 

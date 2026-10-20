@@ -1,18 +1,28 @@
 import { useEffect, useRef } from "react";
-import { Outlet, useLocation, useOutletContext, useParams } from "react-router";
+import {
+  Outlet,
+  useLocation,
+  useMatch,
+  useOutletContext,
+  useParams,
+} from "react-router";
 import useCourse from "../hooks/useCourse";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
   const { courseId } = useParams();
   const { chat, fileUpload, isChatOpen, setIsChatOpen } = useOutletContext();
-  const { course, error } = useCourse(courseId);
+  const location = useLocation();
+  const isMapView = useMatch("/courses/:courseId") !== null;
+  const { course, error } = useCourse(
+    courseId,
+    isMapView ? location.key : "topic",
+  );
   const mainRef = useRef(null);
-  const { pathname } = useLocation();
 
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-  }, [pathname]);
+  }, [location.pathname]);
 
   return (
     <>

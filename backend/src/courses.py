@@ -76,8 +76,16 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
         if course is None:
             return None
 
-        topics = session.scalars(
-            select(Topic).where(Topic.course_id == course_id).order_by(Topic.position)
+        topics = session.execute(
+            select(
+                Topic.id,
+                Topic.parent_id,
+                Topic.title,
+                Topic.description,
+                Topic.explanation.is_not(None).label("has_explanation"),
+            )
+            .where(Topic.course_id == course_id)
+            .order_by(Topic.position)
         ).all()
 
         nodes = {
@@ -85,6 +93,7 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
                 id=topic.id,
                 title=topic.title,
                 description=topic.description,
+                has_explanation=topic.has_explanation,
                 children=[],
             )
             for topic in topics

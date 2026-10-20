@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowRight, ChevronRight } from "lucide-react";
+import { ArrowRight, BookCheck, ChevronRight } from "lucide-react";
 
 function TopicCard({ topic }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -19,6 +19,13 @@ function TopicCard({ topic }) {
           className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
         />
         <span className="font-medium">{topic.title}</span>
+        {topic.has_explanation && (
+          <BookCheck
+            size={16}
+            className="shrink-0 ml-auto text-accent"
+            aria-label="Lesson ready"
+          />
+        )}
       </button>
 
       {isOpen && (

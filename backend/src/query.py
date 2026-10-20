@@ -54,7 +54,7 @@ md = MarkItDown()
 
 
 @app.post("/query")
-async def query(request_content: RequestContent):
+def query(request_content: RequestContent):
     messages_list = [msg.model_dump() for msg in request_content.messages]
 
     if not messages_list:
@@ -111,11 +111,11 @@ async def query(request_content: RequestContent):
 
 
 @app.post("/parse_file")
-async def parse_file(file: UploadFile):
+def parse_file(file: UploadFile):
     if file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Image uploading is not supported")
 
-    file_bytes = await file.read()
+    file_bytes = file.file.read()
     binary_stream = io.BytesIO(file_bytes)
 
     _, extension = os.path.splitext(file.filename)
@@ -174,7 +174,7 @@ async def parse_file(file: UploadFile):
 
 
 @app.delete("/delete_file/{file_uuid}")
-async def delete_file(file_uuid: uuid.UUID):
+def delete_file(file_uuid: uuid.UUID):
     is_deleted = delete_document(file_uuid)
 
     if not is_deleted:
