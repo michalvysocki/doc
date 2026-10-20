@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { Link, useParams } from "react-router";
+import { ArrowRight, ChevronRight } from "lucide-react";
 
 function TopicCard({ topic }) {
   const [isOpen, setIsOpen] = useState(false);
+  const { courseId } = useParams();
 
   return (
     <div className="border border-line rounded-md bg-paper">
@@ -22,6 +24,13 @@ function TopicCard({ topic }) {
       {isOpen && (
         <div className="pl-10 pr-4 pb-3">
           <p className="text-sm text-ink/70">{topic.description}</p>
+          <Link
+            to={`/courses/${courseId}/topics/${topic.id}`}
+            className="inline-flex items-center gap-1 mt-2 text-sm text-accent hover:underline"
+          >
+            Open lesson
+            <ArrowRight size={14} />
+          </Link>
 
           {topic.children.length > 0 && (
             <div className="flex flex-col gap-2 mt-3">
