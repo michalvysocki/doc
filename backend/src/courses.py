@@ -1,4 +1,6 @@
 import uuid
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import delete, select, update
 
@@ -39,6 +41,36 @@ def _flatten_topics(
         topics.extend(_flatten_topics(node.children, course_id, topic.id))
 
     return topics
+
+
+def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
+    """
+    Builds a nested topic tree from flat topic rows.
+
+    Rows need id, parent_id, title, description and has_explanation
+    attributes and must be ordered by position.
+    """
+
+    nodes = {
+        row.id: TopicOut(
+            id=row.id,
+            title=row.title,
+            description=row.description,
+            has_explanation=row.has_explanation,
+            children=[],
+        )
+        for row in rows
+    }
+
+    roots = []
+    for row in rows:
+        node = nodes[row.id]
+        if row.parent_id is None:
+            roots.append(node)
+        else:
+            nodes[row.parent_id].children.append(node)
+
+    return roots
 
 
 def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:
@@ -88,31 +120,12 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
             .order_by(Topic.position)
         ).all()
 
-        nodes = {
-            topic.id: TopicOut(
-                id=topic.id,
-                title=topic.title,
-                description=topic.description,
-                has_explanation=topic.has_explanation,
-                children=[],
-            )
-            for topic in topics
-        }
-
-        roots = []
-        for topic in topics:
-            node = nodes[topic.id]
-            if topic.parent_id is None:
-                roots.append(node)
-            else:
-                nodes[topic.parent_id].children.append(node)
-
         return CourseOut(
             id=course.id,
             title=course.title,
             initial_prompt=course.initial_prompt,
             created_at=course.created_at,
-            topics=roots,
+            topics=_build_tree(topics),
         )
 
 
