@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { fetchJson } from "../utils/api";
 
 export default function useChat(fileUpload) {
   const [userInput, setUserInput] = useState("");
@@ -52,22 +53,11 @@ export default function useChat(fileUpload) {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/query", {
+      const data = await fetchJson("/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages, file_uuids: fileUuids }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          typeof errorData.detail === "string"
-            ? errorData.detail
-            : `Error while sending message: ${response.status}`,
-        );
-      }
-
-      const data = await response.json();
 
       updateMessageHistory((prev) => [
         ...prev,

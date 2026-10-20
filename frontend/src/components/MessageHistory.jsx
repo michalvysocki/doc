@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import AttachmentCard from "./AttachmentCard";
 import MarkdownContent from "./MarkdownContent";
-import getFileLabel from "../utils/fileLabel";
+import getFileLabel, { getFileLabelFromName } from "../utils/fileLabel";
 
 function MessageHistory({ messageHistory, isLoading }) {
   const containerRef = useRef(null);
@@ -28,7 +28,11 @@ function MessageHistory({ messageHistory, isLoading }) {
                 <AttachmentCard
                   key={doc.file_uuid}
                   name={doc.filename}
-                  typeLabel={getFileLabel(doc.type)}
+                  typeLabel={
+                    doc.type
+                      ? getFileLabel(doc.type)
+                      : getFileLabelFromName(doc.filename)
+                  }
                 />
               ))}
               {message.images.map((img) => (

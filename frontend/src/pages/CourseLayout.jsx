@@ -7,6 +7,7 @@ import {
   useParams,
 } from "react-router";
 import useCourse from "../hooks/useCourse";
+import useTopicChat from "../hooks/useTopicChat";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
@@ -18,6 +19,9 @@ function CourseLayout() {
     courseId,
     isMapView ? location.key : "topic",
   );
+  const topicMatch = useMatch("/courses/:courseId/topics/:topicId");
+  const topicId = topicMatch?.params.topicId ?? null;
+  const topicChat = useTopicChat(topicId, fileUpload);
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -37,7 +41,8 @@ function CourseLayout() {
       </main>
 
       <ChatPanel
-        chat={chat}
+        chat={topicId ? topicChat : chat}
+        title={topicId ? "Lesson chat" : "Chat"}
         fileUpload={fileUpload}
         isOpen={isChatOpen}
         onToggle={() => setIsChatOpen((prev) => !prev)}

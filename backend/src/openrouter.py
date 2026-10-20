@@ -37,6 +37,15 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "same language as the topic title."
 )
 
+TOPIC_CHAT_SYSTEM_PROMPT = (
+    "You are a patient tutor helping a learner with one lesson of a course. "
+    "Use the current lesson as the main context. Use the course outline to relate "
+    "this topic to other topics and mention them by title when relevant; if a "
+    "question is covered by another topic, say which one. Use the document "
+    "fragments when they help. Answer in the language of the learner's last "
+    "message and use Markdown."
+)
+
 
 class OpenRouterError(Exception):
     """Raised when a request to OpenRouter fails or returns an unexpected response."""

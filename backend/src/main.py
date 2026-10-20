@@ -2,27 +2,34 @@ import io
 import os
 import tempfile
 import uuid
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 
+from .chat import list_topic_messages, send_topic_message
 from .courses import (
+    course_exists,
     create_explanation,
     delete_course,
     get_course,
     get_topic,
     list_courses,
     save_course,
+    topic_exists,
 )
 from .openrouter import OpenRouterError, generate_topic_map, send_query
 from .schemas import (
+    ChatMessageOut,
     CourseCreate,
     CourseOut,
     CourseSummary,
     RequestContent,
+    TopicChatReply,
     TopicDetail,
+    TopicMessageCreate,
 )
 from .vectorstore import (
     add_document,
@@ -104,9 +111,12 @@ def query(request_content: RequestContent):
 
 
 @app.post("/parse_file")
-def parse_file(file: UploadFile):
+def parse_file(file: UploadFile, course_id: Annotated[uuid.UUID | None, Form()] = None):
     if file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Image uploading is not supported")
+
+    if course_id is not None and not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
 
     file_bytes = file.file.read()
     binary_stream = io.BytesIO(file_bytes)
@@ -159,7 +169,7 @@ def parse_file(file: UploadFile):
         )
 
     try:
-        file_uuid = add_document(text_content, file.filename)
+        file_uuid = add_document(text_content, file.filename, course_id)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -228,3 +238,26 @@ def post_topic_explanation(topic_id: uuid.UUID):
         raise HTTPException(status_code=404, detail="Topic not found")
 
     return topic
+
+
+@app.get("/topics/{topic_id}/messages", response_model=list[ChatMessageOut])
+def read_topic_messages(topic_id: uuid.UUID):
+    if not topic_exists(topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return list_topic_messages(topic_id)
+
+
+@app.post("/topics/{topic_id}/messages", status_code=201, response_model=TopicChatReply)
+def post_topic_message(topic_id: uuid.UUID, request: TopicMessageCreate):
+    try:
+        reply = send_topic_message(
+            topic_id, request.content, request.file_uuids, request.images
+        )
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if reply is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return reply

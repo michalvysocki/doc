@@ -2,7 +2,7 @@ import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import MessageHistory from "./MessageHistory";
 import MessageComposer from "./MessageComposer";
 
-function ChatPanel({ chat, fileUpload, isOpen, onToggle }) {
+function ChatPanel({ chat, title, fileUpload, isOpen, onToggle }) {
   if (!isOpen) {
     return (
       <aside className="w-12 shrink-0 border-l border-line flex flex-col items-center py-3">
@@ -21,7 +21,7 @@ function ChatPanel({ chat, fileUpload, isOpen, onToggle }) {
   return (
     <aside className="w-96 shrink-0 border-l border-line flex flex-col">
       <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-sm font-semibold text-ink">Chat</span>
+        <span className="text-sm font-semibold text-ink">{title}</span>
         <button
           type="button"
           onClick={onToggle}

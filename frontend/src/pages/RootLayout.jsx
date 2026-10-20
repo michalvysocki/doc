@@ -7,15 +7,16 @@ import useCreateCourse from "../hooks/useCreateCourse";
 import Sidebar from "../components/Sidebar";
 
 function RootLayout() {
-  const fileUpload = useFileUpload();
+  const courseMatch = useMatch("/courses/:courseId/*");
+  const activeCourseId = courseMatch?.params.courseId ?? null;
+
+  const fileUpload = useFileUpload(activeCourseId);
   const chat = useChat(fileUpload);
   const coursesState = useCourses();
   const creation = useCreateCourse();
   const [isChatOpen, setIsChatOpen] = useState(true);
 
   const navigate = useNavigate();
-  const courseMatch = useMatch("/courses/:courseId/*");
-  const activeCourseId = courseMatch?.params.courseId ?? null;
 
   async function handleCreateCourse(initialPrompt) {
     const created = await creation.createCourse(initialPrompt);

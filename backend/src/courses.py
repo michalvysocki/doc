@@ -237,3 +237,13 @@ def create_explanation(topic_id: uuid.UUID) -> TopicDetail | None:
         )
 
     return topic.model_copy(update={"explanation": explanation})
+
+
+def course_exists(course_id: uuid.UUID) -> bool:
+    with SessionLocal() as session:
+        return session.get(Course, course_id) is not None
+
+
+def topic_exists(topic_id: uuid.UUID) -> bool:
+    with SessionLocal() as session:
+        return session.get(Topic, topic_id) is not None

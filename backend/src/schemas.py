@@ -76,3 +76,34 @@ class TopicDetail(BaseModel):
     description: str
     explanation: str | None
     subtopics: list[TopicLink]
+
+
+class AttachmentOut(BaseModel):
+    file_uuid: uuid.UUID
+    filename: str
+
+
+class ChatMessageOut(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+    attachments: list[AttachmentOut]
+
+
+class ImageIn(BaseModel):
+    filename: str
+    data: str
+
+
+class TopicMessageCreate(BaseModel):
+    content: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
+    ]
+    file_uuids: list[uuid.UUID] = []
+    images: list[ImageIn] = []
+
+
+class TopicChatReply(BaseModel):
+    user_message: ChatMessageOut
+    assistant_message: ChatMessageOut

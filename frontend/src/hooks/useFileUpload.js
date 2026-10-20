@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { fetchJson } from "../utils/api";
 
 const readFile = (file) => {
   return new Promise((resolve, reject) => {
@@ -11,7 +12,7 @@ const readFile = (file) => {
   });
 };
 
-export default function useFileUpload() {
+export default function useFileUpload(courseId) {
   const fileInput = useRef(null);
   const [documents, setDocuments] = useState([]);
   const [images, setImages] = useState([]);
@@ -40,20 +41,12 @@ export default function useFileUpload() {
       try {
         const formData = new FormData();
         formData.append("file", file_data);
+        if (courseId) formData.append("course_id", courseId);
 
-        const response = await fetch("http://localhost:8000/parse_file", {
+        const data = await fetchJson("/parse_file", {
           method: "POST",
           body: formData,
         });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            errorData.detail || `Error while parsing file: ${response.status}`,
-          );
-        }
-
-        const data = await response.json();
 
         const newDocument = {
           file_uuid: data.file_uuid,
@@ -84,19 +77,10 @@ export default function useFileUpload() {
 
   async function removeDocument(file_uuid) {
     try {
-      const response = await fetch(
-        `http://localhost:8000/delete_file/${file_uuid}`,
-        { method: "DELETE" },
-      );
-      if (response.ok) {
-        setDocuments((prev) =>
-          prev.filter((doc) => doc.file_uuid !== file_uuid),
-        );
-      } else {
-        console.error(`Couldn't delete file. Code: ${response.status}`);
-      }
+      await fetchJson(`/delete_file/${file_uuid}`, { method: "DELETE" });
+      setDocuments((prev) => prev.filter((doc) => doc.file_uuid !== file_uuid));
     } catch (error) {
-      console.error("Network error while deleting document: ", error);
+      console.error("Error while deleting document: ", error);
       setError("Couldn't process file. Try Again.");
     }
   }

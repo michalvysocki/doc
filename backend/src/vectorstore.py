@@ -9,7 +9,7 @@ from .models import Chunk, Document
 from .openrouter import get_embeddings
 
 
-def add_document(text: str, filename: str) -> str:
+def add_document(text: str, filename: str, course_id: uuid.UUID | None = None) -> str:
     """
     Divides text into chunks, generates embeddings and saves
     the document with its chunks in the database.
@@ -17,6 +17,7 @@ def add_document(text: str, filename: str) -> str:
     Args:
         text (str): text to chunk and save
         filename (str): file's name
+        course_id (uuid.UUID | None): course the document belongs to
 
     Returns:
         str: returns document's uuid
@@ -28,6 +29,7 @@ def add_document(text: str, filename: str) -> str:
     document_id = uuid.uuid4()
     document = Document(
         id=document_id,
+        course_id=course_id,
         filename=filename,
         chunks=[
             Chunk(chunk_index=i, text=chunk, embedding=embedding)
@@ -128,6 +130,17 @@ def delete_document(file_uuid: uuid.UUID) -> bool:
         result = session.execute(delete(Document).where(Document.id == file_uuid))
 
     return result.rowcount > 0
+
+
+def get_course_document_ids(course_id: uuid.UUID) -> list[uuid.UUID]:
+    """
+    Returns ids of all documents that belong to the course.
+    """
+
+    with SessionLocal() as session:
+        return list(
+            session.scalars(select(Document.id).where(Document.course_id == course_id))
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,128 @@
+import uuid
+from datetime import UTC, datetime
+
+from src.chat import HISTORY_LIMIT, build_topic_chat_messages, format_course_outline
+from src.schemas import (
+    AttachmentOut,
+    ChatMessageOut,
+    TopicDetail,
+    TopicLink,
+    TopicOut,
+)
+
+
+def make_topic_out(title: str, children: list[TopicOut] | None = None) -> TopicOut:
+    return TopicOut(
+        id=uuid.uuid4(),
+        title=title,
+        description=f"{title} description",
+        has_explanation=False,
+        children=children or [],
+    )
+
+
+def make_topic_detail(explanation: str | None = "Lesson text") -> TopicDetail:
+    return TopicDetail(
+        id=uuid.uuid4(),
+        course_id=uuid.uuid4(),
+        course_title="Rust",
+        path=[TopicLink(id=uuid.uuid4(), title="Basics")],
+        title="Borrowing",
+        description="Borrowing description",
+        explanation=explanation,
+        subtopics=[],
+    )
+
+
+def make_message(
+    message_id: int, role: str, content: str, attachments: list[str] | None = None
+) -> ChatMessageOut:
+    return ChatMessageOut(
+        id=message_id,
+        role=role,
+        content=content,
+        created_at=datetime.now(UTC),
+        attachments=[
+            AttachmentOut(file_uuid=uuid.uuid4(), filename=name)
+            for name in attachments or []
+        ],
+    )
+
+
+def test_outline_indents_levels_and_marks_current_topic():
+    current = make_topic_out("A1a")
+    topics = [
+        make_topic_out("A", [make_topic_out("A1", [current])]),
+        make_topic_out("B"),
+    ]
+
+    outline = format_course_outline(topics, current.id)
+
+    assert outline.splitlines() == [
+        "- A",
+        "  - A1",
+        "    - A1a   <- current lesson",
+        "- B",
+    ]
+
+
+def test_outline_without_current_topic_has_no_marker():
+    outline = format_course_outline([make_topic_out("A")], uuid.uuid4())
+
+    assert "<- current lesson" not in outline
+
+
+def test_system_prompt_contains_course_outline_and_lesson():
+    messages = build_topic_chat_messages(make_topic_detail(), "- Basics", [], [])
+    system = messages[0]
+
+    assert system["role"] == "system"
+    assert "COURSE: Rust" in system["content"]
+    assert "COURSE OUTLINE:\n- Basics" in system["content"]
+    assert "CURRENT LESSON: Basics > Borrowing" in system["content"]
+    assert "Lesson text" in system["content"]
+
+
+def test_missing_lesson_is_explained_to_the_model():
+    messages = build_topic_chat_messages(make_topic_detail(None), "", [], [])
+
+    assert "(The lesson has not been generated yet.)" in messages[0]["content"]
+
+
+def test_fragments_section_only_when_fragments_exist():
+    without = build_topic_chat_messages(make_topic_detail(), "", [], [])
+    with_fragments = build_topic_chat_messages(
+        make_topic_detail(),
+        "",
+        [{"text": "chunk text", "metadata": {"filename": "notes.pdf"}}],
+        [],
+    )
+
+    expected = "--- Fragment of the document: notes.pdf ---\nchunk text"
+
+    assert "DOCUMENT FRAGMENTS" not in without[0]["content"]
+    assert expected in with_fragments[0]["content"]
+
+
+def test_history_is_limited_to_the_most_recent_messages():
+    history = [
+        make_message(i, "user" if i % 2 else "assistant", f"message {i}")
+        for i in range(1, 26)
+    ]
+
+    messages = build_topic_chat_messages(make_topic_detail(), "", [], history)
+
+    assert len(messages) == 1 + HISTORY_LIMIT
+    assert messages[1]["content"] == "message 6"
+    assert messages[-1]["content"] == "message 25"
+
+
+def test_attachments_are_mentioned_in_message_content():
+    history = [make_message(1, "user", "Look at this", ["notes.pdf", "plan.docx"])]
+
+    messages = build_topic_chat_messages(make_topic_detail(), "", [], history)
+
+    assert messages[1] == {
+        "role": "user",
+        "content": "Look at this\n\n[Attached files: notes.pdf, plan.docx]",
+    }

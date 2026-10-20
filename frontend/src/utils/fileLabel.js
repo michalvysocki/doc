@@ -7,4 +7,9 @@ export function getFileLabel(mimeType) {
   return "FILE";
 }
 
+export function getFileLabelFromName(filename) {
+  const extension = filename.split(".").pop().toUpperCase();
+  return extension && extension !== filename.toUpperCase() ? extension : "FILE";
+}
+
 export default getFileLabel;
