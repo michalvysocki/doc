@@ -4,14 +4,18 @@ from datetime import UTC, datetime
 from src.chat import (
     HISTORY_LIMIT,
     MAX_CHARS_IN_TASK_CONTEXT,
+    build_course_chat_messages,
     build_topic_chat_messages,
     format_course_outline,
+    format_outline_with_progress,
     format_tasks_for_chat,
 )
 from src.schemas import (
     AttachmentOut,
     AttemptOut,
     ChatMessageOut,
+    CourseOut,
+    CourseProgress,
     TaskOut,
     TopicDetail,
     TopicLink,
@@ -200,3 +204,84 @@ def test_tasks_section_only_when_tasks_exist():
 
     assert "PRACTICE TASKS" not in without[0]["content"]
     assert "PRACTICE TASKS:\nTask 1: Explain moves" in with_tasks[0]["content"]
+
+
+def make_progress_topic(
+    title: str,
+    children: list[TopicOut] | None = None,
+    has_explanation: bool = False,
+    tasks_total: int = 0,
+    tasks_solved: int = 0,
+) -> TopicOut:
+    return TopicOut(
+        id=uuid.uuid4(),
+        title=title,
+        description="",
+        has_explanation=has_explanation,
+        tasks_total=tasks_total,
+        tasks_solved=tasks_solved,
+        children=children or [],
+    )
+
+
+def make_course(topics: list[TopicOut]) -> CourseOut:
+    return CourseOut(
+        id=uuid.uuid4(),
+        title="Rust",
+        initial_prompt="I want to learn Rust",
+        created_at=datetime.now(UTC),
+        topics=topics,
+        progress=CourseProgress(topics_total=3, topics_completed=1),
+    )
+
+
+def test_outline_with_progress_shows_markers_only_when_relevant():
+    topics = [
+        make_progress_topic(
+            "Basics",
+            [
+                make_progress_topic(
+                    "Borrowing", has_explanation=True, tasks_total=7, tasks_solved=7
+                ),
+                make_progress_topic("Cargo", has_explanation=True),
+            ],
+            has_explanation=True,
+            tasks_total=7,
+            tasks_solved=2,
+        ),
+        make_progress_topic("Async"),
+    ]
+
+    assert format_outline_with_progress(topics).splitlines() == [
+        "- Basics [lesson ready, tasks 2/7]",
+        "  - Borrowing [lesson ready, completed]",
+        "  - Cargo [lesson ready]",
+        "- Async",
+    ]
+
+
+def test_course_chat_system_prompt_contains_goal_progress_and_outline():
+    messages = build_course_chat_messages(
+        make_course([]), "- Basics [lesson ready]", [], []
+    )
+    system = messages[0]["content"]
+
+    assert messages[0]["role"] == "system"
+    assert "COURSE: Rust" in system
+    assert "LEARNER'S GOAL: I want to learn Rust" in system
+    assert "PROGRESS: 1 / 3 topics completed" in system
+    assert "COURSE OUTLINE:\n- Basics [lesson ready]" in system
+    assert "DOCUMENT FRAGMENTS" not in system
+
+
+def test_course_chat_includes_fragments_and_limited_history():
+    history = [make_message(i, "user", f"message {i}") for i in range(1, 26)]
+    fragments = [{"text": "chunk", "metadata": {"filename": "notes.pdf"}}]
+
+    messages = build_course_chat_messages(make_course([]), "", fragments, history)
+
+    assert (
+        "--- Fragment of the document: notes.pdf ---\nchunk" in messages[0]["content"]
+    )
+    assert len(messages) == 1 + HISTORY_LIMIT
+    assert messages[-1]["content"] == "message 25"

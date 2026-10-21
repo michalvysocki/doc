@@ -49,6 +49,19 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "learner's last message and use Markdown."
 )
 
+COURSE_CHAT_SYSTEM_PROMPT = (
+    "You are a learning guide for a whole course. Help the learner plan and "
+    "understand the course: what to study next, how topics relate to each other "
+    "and what to review, using the course outline with progress markers. Use the "
+    "document fragments when they help. When the learner asks for new topics, add "
+    "them with the add_topics tool, using topic ids from the outline; if the "
+    "request is unclear, ask first instead of guessing. Check the outline so you "
+    "do not add duplicates, and keep the whole course at most 3 levels deep. You "
+    "cannot rename, move or delete topics yet. After adding topics, tell the "
+    "learner what you added. Answer in the language of the learner's last message "
+    "and use Markdown."
+)
+
 TASKS_SYSTEM_PROMPT = (
     "You are an expert teacher creating practice tasks for one lesson of a course. "
     "Create open questions and practical exercises (no multiple choice) that check "
@@ -121,6 +134,31 @@ def send_query(messages: list[dict[str, Any]]) -> str:
 
     try:
         return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+
+
+def send_query_with_tools(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """
+    Sends messages with tool definitions and returns the model's message, which
+    contains either text content or tool_calls.
+    """
+
+    data = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": messages,
+            "tools": tools,
+            "plugins": [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
+        },
+        timeout=120,
+    )
+
+    try:
+        return data["choices"][0]["message"]
     except (KeyError, IndexError) as e:
         raise OpenRouterError("Unexpected response format from OpenRouter") from e
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Outlet,
   useLocation,
@@ -7,21 +7,27 @@ import {
   useParams,
 } from "react-router";
 import useCourse from "../hooks/useCourse";
-import useTopicChat from "../hooks/useTopicChat";
+import usePersistentChat from "../hooks/usePersistentChat";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
   const { courseId } = useParams();
-  const { chat, fileUpload, isChatOpen, setIsChatOpen } = useOutletContext();
+  const { fileUpload, isChatOpen, setIsChatOpen } = useOutletContext();
   const location = useLocation();
   const isMapView = useMatch("/courses/:courseId") !== null;
+  const [courseVersion, setCourseVersion] = useState(0);
   const { course, error } = useCourse(
     courseId,
-    isMapView ? location.key : "topic",
+    `${isMapView ? location.key : "topic"}:${courseVersion}`,
   );
   const topicMatch = useMatch("/courses/:courseId/topics/:topicId/*");
   const topicId = topicMatch?.params.topicId ?? null;
-  const topicChat = useTopicChat(topicId, fileUpload);
+  const chatPath = topicId
+    ? `/topics/${topicId}/messages`
+    : `/courses/${courseId}/messages`;
+  const persistentChat = usePersistentChat(chatPath, fileUpload, {
+    onCourseChanged: () => setCourseVersion((version) => version + 1),
+  });
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -41,8 +47,8 @@ function CourseLayout() {
       </main>
 
       <ChatPanel
-        chat={topicId ? topicChat : chat}
-        title={topicId ? "Lesson chat" : "Chat"}
+        chat={persistentChat}
+        title={topicId ? "Lesson chat" : "Course chat"}
         fileUpload={fileUpload}
         isOpen={isChatOpen}
         onToggle={() => setIsChatOpen((prev) => !prev)}

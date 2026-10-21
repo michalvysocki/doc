@@ -9,7 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 
-from .chat import list_topic_messages, send_topic_message
+from .chat import (
+    list_course_messages,
+    list_topic_messages,
+    send_course_message,
+    send_topic_message,
+)
 from .courses import (
     course_exists,
     create_explanation,
@@ -20,19 +25,18 @@ from .courses import (
     save_course,
     topic_exists,
 )
-from .openrouter import OpenRouterError, generate_topic_map, send_query
+from .openrouter import OpenRouterError, generate_topic_map
 from .schemas import (
     AttemptCreate,
     AttemptOut,
     ChatMessageOut,
+    ChatReply,
     CourseCreate,
     CourseOut,
     CourseSummary,
-    RequestContent,
+    MessageCreate,
     TaskOut,
-    TopicChatReply,
     TopicDetail,
-    TopicMessageCreate,
 )
 from .tasks import (
     LessonMissingError,
@@ -41,12 +45,7 @@ from .tasks import (
     grade_attempt,
     submit_attempt,
 )
-from .vectorstore import (
-    add_document,
-    delete_document,
-    get_filenames,
-    retrieve_chunks,
-)
+from .vectorstore import add_document, delete_document
 
 app = FastAPI()
 
@@ -63,69 +62,12 @@ app.add_middleware(
 md = MarkItDown()
 
 
-@app.post("/query")
-def query(request_content: RequestContent):
-    messages_list = [msg.model_dump() for msg in request_content.messages]
-
-    if not messages_list:
-        raise HTTPException(status_code=400, detail="Brak wiadomości w zapytaniu")
-
-    file_uuids = request_content.file_uuids
-
-    if file_uuids:
-        last_message = messages_list[-1]
-        last_user_text = ""
-
-        if isinstance(last_message["content"], str):
-            last_user_text = last_message["content"]
-
-        elif isinstance(last_message["content"], list):
-            for block in last_message["content"]:
-                if block.get("type") == "text":
-                    last_user_text = block.get("text", "")
-                    break
-
-        try:
-            found_chunks = retrieve_chunks(query=last_user_text, file_uuids=file_uuids)
-        except OpenRouterError as e:
-            raise HTTPException(status_code=502, detail=str(e)) from e
-        filenames = get_filenames(file_uuids)
-
-        attached_list = "\n".join(f"- {name}" for name in filenames)
-
-        context_texts = []
-        for chunk in found_chunks:
-            filename = chunk["metadata"].get("filename", "Unknown document")
-            context_texts.append(
-                f"--- Fragment of the document: {filename} ---\n{chunk['text']}"
-            )
-        full_context = "\n\n".join(context_texts)
-
-        system_prompt = (
-            "You are an AI assistant and teacher. The user attached the following "
-            f"documents to this conversation:\n{attached_list}\n\n"
-            "Answer the user's questions based on the document fragments below. "
-            "If the answer is not in the documents, say so directly and answer "
-            "using your general knowledge.\n\n"
-            f"DOCUMENT FRAGMENTS:\n{full_context}"
-        )
-
-        messages_list.insert(0, {"role": "system", "content": system_prompt})
-
-    try:
-        result = send_query(messages_list)
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
-    return result
-
-
 @app.post("/parse_file")
-def parse_file(file: UploadFile, course_id: Annotated[uuid.UUID | None, Form()] = None):
+def parse_file(file: UploadFile, course_id: Annotated[uuid.UUID, Form()]):
     if file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Image uploading is not supported")
 
-    if course_id is not None and not course_exists(course_id):
+    if not course_exists(course_id):
         raise HTTPException(status_code=404, detail="Course not found")
 
     file_bytes = file.file.read()
@@ -258,8 +200,8 @@ def read_topic_messages(topic_id: uuid.UUID):
     return list_topic_messages(topic_id)
 
 
-@app.post("/topics/{topic_id}/messages", status_code=201, response_model=TopicChatReply)
-def post_topic_message(topic_id: uuid.UUID, request: TopicMessageCreate):
+@app.post("/topics/{topic_id}/messages", status_code=201, response_model=ChatReply)
+def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
     try:
         reply = send_topic_message(
             topic_id, request.content, request.file_uuids, request.images
@@ -322,3 +264,26 @@ def post_grade(attempt_id: int):
         raise HTTPException(status_code=404, detail="Attempt not found")
 
     return attempt
+
+
+@app.get("/courses/{course_id}/messages", response_model=list[ChatMessageOut])
+def read_course_messages(course_id: uuid.UUID):
+    if not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return list_course_messages(course_id)
+
+
+@app.post("/courses/{course_id}/messages", status_code=201, response_model=ChatReply)
+def post_course_message(course_id: uuid.UUID, request: MessageCreate):
+    try:
+        reply = send_course_message(
+            course_id, request.content, request.file_uuids, request.images
+        )
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if reply is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return reply

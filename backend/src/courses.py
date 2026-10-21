@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, select, update
 
 from .database import SessionLocal
 from .models import Course, Task, TaskAttempt, Topic
@@ -20,23 +20,27 @@ from .schemas import (
 
 
 def _flatten_topics(
-    nodes: list[TopicNode], course_id: uuid.UUID, parent_id: uuid.UUID | None = None
+    nodes: list[TopicNode],
+    course_id: uuid.UUID,
+    parent_id: uuid.UUID | None = None,
+    start_position: int = 0,
 ) -> list[Topic]:
     """
     Converts a nested topic tree into a flat list of Topic rows,
-    parents always before their children.
+    parents always before their children. Top-level nodes get positions
+    starting at start_position.
     """
 
     topics = []
 
-    for position, node in enumerate(nodes):
+    for index, node in enumerate(nodes):
         topic = Topic(
             id=uuid.uuid4(),
             course_id=course_id,
             parent_id=parent_id,
             title=node.title,
             description=node.description,
-            position=position,
+            position=start_position + index,
         )
         topics.append(topic)
         topics.extend(_flatten_topics(node.children, course_id, topic.id))
@@ -91,6 +95,64 @@ def _course_progress(topics: list[TopicOut]) -> CourseProgress:
             completed += 1
 
     return CourseProgress(topics_total=total, topics_completed=completed)
+
+
+class TopicPlacementError(Exception):
+    """Raised when new topics cannot be placed where requested."""
+
+
+def add_topics(
+    course_id: uuid.UUID,
+    parent_id: uuid.UUID | None,
+    after_topic_id: uuid.UUID | None,
+    nodes: list[TopicNode],
+) -> list[str]:
+    """
+    Adds new topics (with their subtopics) to a course, under the given parent
+    and after the given sibling, shifting the following siblings.
+
+    Returns:
+        list[str]: titles of all created topics
+
+    Raises:
+        TopicPlacementError: if the parent or the sibling is not valid
+    """
+
+    with SessionLocal() as session, session.begin():
+        if parent_id is not None:
+            parent = session.get(Topic, parent_id)
+            if parent is None or parent.course_id != course_id:
+                raise TopicPlacementError("parent topic not found in this course")
+
+        siblings = and_(
+            Topic.course_id == course_id,
+            Topic.parent_id == parent_id
+            if parent_id is not None
+            else Topic.parent_id.is_(None),
+        )
+
+        if after_topic_id is not None:
+            after = session.get(Topic, after_topic_id)
+            if after is None or after.course_id != course_id:
+                raise TopicPlacementError("sibling topic not found in this course")
+            if after.parent_id != parent_id:
+                raise TopicPlacementError("sibling topic has a different parent")
+            start = after.position + 1
+        else:
+            last = session.scalar(select(func.max(Topic.position)).where(siblings))
+            start = 0 if last is None else last + 1
+
+        session.execute(
+            update(Topic)
+            .where(siblings, Topic.position >= start)
+            .values(position=Topic.position + len(nodes))
+        )
+
+        topics = _flatten_topics(nodes, course_id, parent_id, start_position=start)
+        titles = [topic.title for topic in topics]
+        session.add_all(topics)
+
+    return titles
 
 
 def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:

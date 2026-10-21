@@ -1,18 +1,8 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-
-
-class Message(BaseModel):
-    role: str
-    content: str | list[dict[str, Any]]
-
-
-class RequestContent(BaseModel):
-    messages: list[Message]
-    file_uuids: list[uuid.UUID] = []
 
 
 class TopicNode(BaseModel):
@@ -104,7 +94,7 @@ class ImageIn(BaseModel):
     data: str
 
 
-class TopicMessageCreate(BaseModel):
+class MessageCreate(BaseModel):
     content: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
     ]
@@ -112,9 +102,22 @@ class TopicMessageCreate(BaseModel):
     images: list[ImageIn] = []
 
 
-class TopicChatReply(BaseModel):
+class ChatReply(BaseModel):
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
+    course_changed: bool = False
+
+
+class AddTopicsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    parent_topic_id: str | None = Field(
+        description="Id of the topic to add subtopics to; null for top-level topics"
+    )
+    after_topic_id: str | None = Field(
+        description="Id of the sibling after which to insert; null to add at the end"
+    )
+    topics: list[TopicNode] = Field(description="Topics to add, may have subtopics")
 
 
 class GeneratedTask(BaseModel):

@@ -13,39 +13,43 @@ function toViewMessage(message) {
   };
 }
 
-export default function useTopicChat(topicId, fileUpload) {
+export default function usePersistentChat(
+  path,
+  fileUpload,
+  { onCourseChanged } = {},
+) {
   const [userInput, setUserInput] = useState("");
   const [chat, setChat] = useState({
-    topicId: null,
+    path: null,
     messages: [],
     error: null,
   });
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!topicId) return;
+    if (!path) return;
     let ignore = false;
 
-    fetchJson(`/topics/${topicId}/messages`)
+    fetchJson(path)
       .then((messages) => {
-        if (!ignore) setChat({ topicId, messages, error: null });
+        if (!ignore) setChat({ path, messages, error: null });
       })
       .catch((error) => {
         console.error("Error while loading messages: ", error);
-        if (!ignore) setChat({ topicId, messages: [], error: error.message });
+        if (!ignore) setChat({ path, messages: [], error: error.message });
       });
 
     return () => {
       ignore = true;
     };
-  }, [topicId]);
+  }, [path]);
 
-  function updateChat(forTopicId, update) {
-    setChat((prev) => (prev.topicId === forTopicId ? update(prev) : prev));
+  function updateChat(forPath, update) {
+    setChat((prev) => (prev.path === forPath ? update(prev) : prev));
   }
 
   async function handleSend() {
-    const sendingTopicId = topicId;
+    const sendingPath = path;
     const { documents, images } = fileUpload;
     const pending = {
       role: "user",
@@ -60,7 +64,7 @@ export default function useTopicChat(topicId, fileUpload) {
     setUserInput("");
     fileUpload.setDocuments([]);
     fileUpload.setImages([]);
-    updateChat(sendingTopicId, (prev) => ({
+    updateChat(sendingPath, (prev) => ({
       ...prev,
       messages: [...prev.messages, pending],
       error: null,
@@ -68,7 +72,7 @@ export default function useTopicChat(topicId, fileUpload) {
     setIsLoading(true);
 
     try {
-      const reply = await fetchJson(`/topics/${sendingTopicId}/messages`, {
+      const reply = await fetchJson(sendingPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -77,7 +81,7 @@ export default function useTopicChat(topicId, fileUpload) {
           images: images.map(({ filename, data }) => ({ filename, data })),
         }),
       });
-      updateChat(sendingTopicId, (prev) => ({
+      updateChat(sendingPath, (prev) => ({
         ...prev,
         messages: [
           ...prev.messages.filter((message) => message !== pending),
@@ -85,12 +89,11 @@ export default function useTopicChat(topicId, fileUpload) {
           reply.assistant_message,
         ],
       }));
+      if (reply.course_changed) onCourseChanged?.();
     } catch (error) {
       console.error("Error while sending message: ", error);
-      const saved = await fetchJson(`/topics/${sendingTopicId}/messages`).catch(
-        () => null,
-      );
-      updateChat(sendingTopicId, (prev) => ({
+      const saved = await fetchJson(sendingPath).catch(() => null);
+      updateChat(sendingPath, (prev) => ({
         ...prev,
         messages: saved ?? prev.messages,
         error: error.message,
@@ -100,7 +103,7 @@ export default function useTopicChat(topicId, fileUpload) {
     }
   }
 
-  const isCurrent = chat.topicId === topicId;
+  const isCurrent = chat.path === path;
   const messageHistory = useMemo(
     () => (isCurrent ? chat.messages.map(toViewMessage) : []),
     [isCurrent, chat.messages],

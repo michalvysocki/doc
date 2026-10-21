@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Outlet, useMatch, useNavigate } from "react-router";
 import useFileUpload from "../hooks/useFileUpload";
-import useChat from "../hooks/useChat";
 import useCourses from "../hooks/useCourses";
 import useCreateCourse from "../hooks/useCreateCourse";
 import Sidebar from "../components/Sidebar";
@@ -11,7 +10,6 @@ function RootLayout() {
   const activeCourseId = courseMatch?.params.courseId ?? null;
 
   const fileUpload = useFileUpload(activeCourseId);
-  const chat = useChat(fileUpload);
   const coursesState = useCourses();
   const creation = useCreateCourse();
   const [isChatOpen, setIsChatOpen] = useState(true);
@@ -51,7 +49,6 @@ function RootLayout() {
 
       <Outlet
         context={{
-          chat,
           fileUpload,
           isChatOpen,
           setIsChatOpen,
