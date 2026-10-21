@@ -25,6 +25,8 @@ def make_topic_out(title: str, children: list[TopicOut] | None = None) -> TopicO
         title=title,
         description=f"{title} description",
         has_explanation=False,
+        tasks_total=0,
+        tasks_solved=0,
         children=children or [],
     )
 

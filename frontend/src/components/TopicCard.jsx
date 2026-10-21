@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowRight, BookCheck, ChevronRight } from "lucide-react";
+import { ArrowRight, BookCheck, ChevronRight, CircleCheck } from "lucide-react";
 
 function TopicCard({ topic }) {
   const [isOpen, setIsOpen] = useState(false);
   const { courseId } = useParams();
+  const isCompleted =
+    topic.tasks_total > 0 && topic.tasks_solved === topic.tasks_total;
 
   return (
     <div className="border border-line rounded-md bg-paper">
@@ -19,13 +21,28 @@ function TopicCard({ topic }) {
           className={`shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`}
         />
         <span className="font-medium">{topic.title}</span>
-        {topic.has_explanation && (
-          <BookCheck
-            size={16}
-            className="shrink-0 ml-auto text-accent"
-            aria-label="Lesson ready"
-          />
-        )}
+        <span className="ml-auto flex items-center gap-2 shrink-0">
+          {topic.has_explanation && (
+            <BookCheck
+              size={16}
+              className="text-accent"
+              aria-label="Lesson ready"
+            />
+          )}
+          {isCompleted ? (
+            <CircleCheck
+              size={16}
+              className="text-accent"
+              aria-label="Topic completed"
+            />
+          ) : (
+            topic.tasks_total > 0 && (
+              <span className="text-xs text-ink/60">
+                {topic.tasks_solved}/{topic.tasks_total}
+              </span>
+            )
+          )}
+        </span>
       </button>
 
       {isOpen && (

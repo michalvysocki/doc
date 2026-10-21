@@ -45,7 +45,14 @@ class TopicOut(BaseModel):
     title: str
     description: str
     has_explanation: bool
+    tasks_total: int
+    tasks_solved: int
     children: list["TopicOut"]
+
+
+class CourseProgress(BaseModel):
+    topics_total: int
+    topics_completed: int
 
 
 class CourseOut(BaseModel):
@@ -54,6 +61,7 @@ class CourseOut(BaseModel):
     initial_prompt: str
     created_at: datetime
     topics: list[TopicOut]
+    progress: CourseProgress
 
 
 class CourseSummary(BaseModel):

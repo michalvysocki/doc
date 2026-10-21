@@ -2,13 +2,14 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 
 from .database import SessionLocal
-from .models import Course, Topic
+from .models import Course, Task, TaskAttempt, Topic
 from .openrouter import generate_topic_explanation
 from .schemas import (
     CourseOut,
+    CourseProgress,
     CourseSummary,
     TopicDetail,
     TopicLink,
@@ -47,8 +48,8 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
     """
     Builds a nested topic tree from flat topic rows.
 
-    Rows need id, parent_id, title, description and has_explanation
-    attributes and must be ordered by position.
+    Rows need id, parent_id, title, description, has_explanation, tasks_total
+    and tasks_solved attributes and must be ordered by position.
     """
 
     nodes = {
@@ -57,6 +58,8 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
             title=row.title,
             description=row.description,
             has_explanation=row.has_explanation,
+            tasks_total=row.tasks_total,
+            tasks_solved=row.tasks_solved,
             children=[],
         )
         for row in rows
@@ -71,6 +74,23 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
             nodes[row.parent_id].children.append(node)
 
     return roots
+
+
+def _course_progress(topics: list[TopicOut]) -> CourseProgress:
+    """
+    Counts all topics in the tree and the completed ones (with all tasks solved).
+    """
+
+    total = 0
+    completed = 0
+    for topic in topics:
+        children = _course_progress(topic.children)
+        total += 1 + children.topics_total
+        completed += children.topics_completed
+        if topic.tasks_total > 0 and topic.tasks_solved == topic.tasks_total:
+            completed += 1
+
+    return CourseProgress(topics_total=total, topics_completed=completed)
 
 
 def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:
@@ -108,6 +128,22 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
         if course is None:
             return None
 
+        solved_task_ids = (
+            select(TaskAttempt.task_id)
+            .where(TaskAttempt.verdict == "correct")
+            .distinct()
+        )
+        task_counts = (
+            select(
+                Task.topic_id,
+                func.count().label("tasks_total"),
+                func.count().filter(Task.id.in_(solved_task_ids)).label("tasks_solved"),
+            )
+            .where(Task.archived_at.is_(None))
+            .group_by(Task.topic_id)
+            .subquery()
+        )
+
         topics = session.execute(
             select(
                 Topic.id,
@@ -115,17 +151,23 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
                 Topic.title,
                 Topic.description,
                 Topic.explanation.is_not(None).label("has_explanation"),
+                func.coalesce(task_counts.c.tasks_total, 0).label("tasks_total"),
+                func.coalesce(task_counts.c.tasks_solved, 0).label("tasks_solved"),
             )
+            .outerjoin(task_counts, task_counts.c.topic_id == Topic.id)
             .where(Topic.course_id == course_id)
             .order_by(Topic.position)
         ).all()
+
+        tree = _build_tree(topics)
 
         return CourseOut(
             id=course.id,
             title=course.title,
             initial_prompt=course.initial_prompt,
             created_at=course.created_at,
-            topics=_build_tree(topics),
+            topics=tree,
+            progress=_course_progress(tree),
         )
 
 
