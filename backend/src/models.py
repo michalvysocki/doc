@@ -46,6 +46,37 @@ class Topic(Base):
     explanation: Mapped[str | None] = mapped_column(Text)
 
 
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int]
+    question: Mapped[str] = mapped_column(Text)
+    grading_notes: Mapped[str] = mapped_column(Text)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TaskAttempt(Base):
+    __tablename__ = "task_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    answer: Mapped[str] = mapped_column(Text)
+    verdict: Mapped[str | None] = mapped_column(String(32))
+    feedback: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 

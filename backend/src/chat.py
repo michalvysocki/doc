@@ -12,13 +12,16 @@ from .schemas import (
     AttachmentOut,
     ChatMessageOut,
     ImageIn,
+    TaskOut,
     TopicChatReply,
     TopicDetail,
     TopicOut,
 )
+from .tasks import get_tasks
 from .vectorstore import get_course_document_ids, retrieve_chunks
 
 HISTORY_LIMIT = 20
+MAX_CHARS_IN_TASK_CONTEXT = 1500
 
 
 def get_or_create_topic_conversation(topic_id: uuid.UUID) -> uuid.UUID | None:
@@ -160,11 +163,40 @@ def format_course_outline(
     return "\n".join(lines)
 
 
+def _shorten(text: str, limit: int = MAX_CHARS_IN_TASK_CONTEXT) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def format_tasks_for_chat(tasks: list[TaskOut]) -> str:
+    """
+    Formats the topic's tasks with the learner's latest attempt for the chat prompt.
+    """
+
+    lines = []
+    for index, task in enumerate(tasks, start=1):
+        lines.append(f"Task {index}: {_shorten(task.question)}")
+
+        latest = task.attempts[-1] if task.attempts else None
+        if latest is None:
+            lines.append("  Not attempted yet.")
+            continue
+
+        verdict = latest.verdict or "not graded"
+        lines.append(
+            f"  Learner's latest answer ({verdict}): {_shorten(latest.answer)}"
+        )
+        if latest.feedback:
+            lines.append(f"  Feedback: {_shorten(latest.feedback)}")
+
+    return "\n".join(lines)
+
+
 def build_topic_chat_messages(
     topic: TopicDetail,
     outline: str,
     fragments: list[dict],
     history: list[ChatMessageOut],
+    tasks: list[TaskOut],
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -186,6 +218,8 @@ def build_topic_chat_messages(
             for f in fragments
         ]
         sections.append("DOCUMENT FRAGMENTS:\n" + "\n\n".join(fragment_texts))
+    if tasks:
+        sections.append(f"PRACTICE TASKS:\n{format_tasks_for_chat(tasks)}")
 
     messages = [{"role": "system", "content": "\n\n".join(sections)}]
 
@@ -232,7 +266,9 @@ def send_topic_message(
         query=content, file_uuids=get_course_document_ids(topic.course_id)
     )
     history = list_topic_messages(topic_id)
-    messages = build_topic_chat_messages(topic, outline, fragments, history)
+    messages = build_topic_chat_messages(
+        topic, outline, fragments, history, get_tasks(topic_id)
+    )
 
     if images:
         messages[-1]["content"] = [

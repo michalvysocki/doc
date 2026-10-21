@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -107,3 +107,52 @@ class TopicMessageCreate(BaseModel):
 class TopicChatReply(BaseModel):
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
+
+
+class GeneratedTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(
+        description="An open question or practical exercise for the learner"
+    )
+    grading_notes: str = Field(
+        description="Key points a correct answer must contain; never shown to the learner"
+    )
+
+
+class GeneratedTaskSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tasks: list[GeneratedTask] = Field(description="Tasks from easier to harder")
+
+
+class AttemptOut(BaseModel):
+    id: int
+    answer: str
+    verdict: str | None
+    feedback: str | None
+    created_at: datetime
+
+
+class TaskOut(BaseModel):
+    id: uuid.UUID
+    position: int
+    question: str
+    attempts: list[AttemptOut]
+
+
+class TaskGrade(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    verdict: Literal["correct", "partially_correct", "incorrect"] = Field(
+        description="Overall assessment of the answer"
+    )
+    feedback: str = Field(
+        description="What is right, what is missing or wrong, and a hint how to improve"
+    )
+
+
+class AttemptCreate(BaseModel):
+    answer: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20000)
+    ]

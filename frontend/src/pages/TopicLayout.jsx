@@ -1,9 +1,22 @@
-import { Link, useOutletContext, useParams } from "react-router";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useOutletContext,
+  useParams,
+} from "react-router";
 import { ChevronRight } from "lucide-react";
 import useTopic from "../hooks/useTopic";
-import MarkdownContent from "../components/MarkdownContent";
 
-function TopicPage() {
+function tabClass({ isActive }) {
+  return `px-3 py-2 text-sm border-b-2 -mb-px ${
+    isActive
+      ? "border-accent text-accent font-medium"
+      : "border-transparent text-ink/60 hover:text-ink"
+  }`;
+}
+
+function TopicLayout() {
   const { topicId } = useParams();
   const { course } = useOutletContext();
   const { topic, error } = useTopic(topicId);
@@ -38,39 +51,20 @@ function TopicPage() {
       <h1 className="text-2xl font-semibold text-ink mt-2">{topic.title}</h1>
       <p className="text-ink/70 mt-1">{topic.description}</p>
 
-      <div className="mt-6">
-        {topic.explanation !== null ? (
-          <div className="prose max-w-none text-ink">
-            <MarkdownContent>{topic.explanation}</MarkdownContent>
-          </div>
-        ) : error ? (
-          <p className="text-sm text-warn">{error}</p>
-        ) : (
-          <p className="text-sm text-ink/60">
-            Writing the lesson, this can take a few minutes...
-          </p>
-        )}
-      </div>
+      <nav className="flex gap-2 mt-4 border-b border-line">
+        <NavLink to="." end className={tabClass}>
+          Theory
+        </NavLink>
+        <NavLink to="tasks" className={tabClass}>
+          Tasks
+        </NavLink>
+      </nav>
 
-      {topic.subtopics.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-lg font-semibold text-ink">Subtopics</h2>
-          <ul className="mt-2 flex flex-col gap-2">
-            {topic.subtopics.map((subtopic) => (
-              <li key={subtopic.id}>
-                <Link
-                  to={`/courses/${course.id}/topics/${subtopic.id}`}
-                  className="block border border-line rounded-md px-4 py-3 text-ink hover:bg-line/50"
-                >
-                  {subtopic.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <div className="mt-6">
+        <Outlet context={{ course, topic, error }} />
+      </div>
     </article>
   );
 }
 
-export default TopicPage;
+export default TopicLayout;

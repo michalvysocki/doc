@@ -5,9 +5,9 @@ from typing import Any
 
 import requests
 from dotenv import load_dotenv
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from .schemas import TopicMap
+from .schemas import GeneratedTaskSet, TaskGrade, TopicMap
 
 current_dir = Path(__file__).resolve().parent
 load_dotenv(current_dir.parent / ".env")
@@ -42,8 +42,34 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "Use the current lesson as the main context. Use the course outline to relate "
     "this topic to other topics and mention them by title when relevant; if a "
     "question is covered by another topic, say which one. Use the document "
-    "fragments when they help. Answer in the language of the learner's last "
-    "message and use Markdown."
+    "fragments when they help. The learner also has practice tasks for this "
+    "lesson; refer to them by their number. When helping with a task, explain "
+    "concepts and give hints instead of writing the complete solution, unless the "
+    "learner explicitly asks for it after trying. Answer in the language of the "
+    "learner's last message and use Markdown."
+)
+
+TASKS_SYSTEM_PROMPT = (
+    "You are an expert teacher creating practice tasks for one lesson of a course. "
+    "Create open questions and practical exercises (no multiple choice) that check "
+    "real understanding of the lesson, ordered from easier to harder. Choose as "
+    "many tasks as the topic needs, usually between 3 and 8. For technical topics "
+    "include practical exercises, such as writing or analysing code. For each task "
+    "write grading notes listing the key points a correct answer must contain; the "
+    "learner never sees them. Write the questions in Markdown. Write in the same "
+    "language as the lesson."
+)
+
+GRADING_SYSTEM_PROMPT = (
+    "You are a fair teacher grading a learner's answer to a practice task. Use the "
+    "grading notes as the reference for what a correct answer must contain. Judge "
+    "understanding, not wording: an answer may be phrased differently than the "
+    "notes. Use 'correct' when all key points are covered without mistakes, "
+    "'partially_correct' when some key points are covered or there are minor "
+    "mistakes, and 'incorrect' otherwise. Write the feedback in the language of the "
+    "learner's answer: what is good, what is missing or wrong, and a hint how to "
+    "improve. Do not reveal the grading notes or write the full solution. Use "
+    "Markdown."
 )
 
 
@@ -113,32 +139,50 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
         ) from e
 
 
-def generate_topic_map(initial_prompt: str) -> TopicMap:
+def _structured_query[T: BaseModel](
+    messages: list[dict[str, Any]], schema: type[T], name: str, timeout: int
+) -> T:
+    """
+    Asks the model for a JSON response matching the schema (strict structured
+    output) and validates it.
+
+    Raises:
+        OpenRouterError: if the request fails or the response does not match
+    """
+
     data = _post_to_openrouter(
         URL,
         {
             "model": MODEL,
-            "messages": [
-                {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
-                {"role": "user", "content": initial_prompt},
-            ],
+            "messages": messages,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "topic_map",
+                    "name": name,
                     "strict": True,
-                    "schema": TopicMap.model_json_schema(),
+                    "schema": schema.model_json_schema(),
                 },
             },
         },
-        timeout=180,
+        timeout=timeout,
     )
 
     try:
-        content = data["choices"][0]["message"]["content"]
-        return TopicMap.model_validate_json(content)
+        return schema.model_validate_json(data["choices"][0]["message"]["content"])
     except (KeyError, IndexError, ValidationError) as e:
-        raise OpenRouterError("Model returned an invalid topic map") from e
+        raise OpenRouterError(f"Model returned an invalid {name}") from e
+
+
+def generate_topic_map(initial_prompt: str) -> TopicMap:
+    return _structured_query(
+        [
+            {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
+            {"role": "user", "content": initial_prompt},
+        ],
+        TopicMap,
+        name="topic_map",
+        timeout=180,
+    )
 
 
 def generate_topic_explanation(
@@ -180,6 +224,50 @@ def generate_topic_explanation(
         raise OpenRouterError("Model returned an empty explanation")
 
     return content
+
+
+def generate_tasks(
+    course_title: str, path: list[str], title: str, lesson: str
+) -> GeneratedTaskSet:
+    context = (
+        f"Course: {course_title}\n"
+        f"Topic path: {' > '.join([*path, title])}\n\n"
+        f"LESSON:\n{lesson}"
+    )
+    return _structured_query(
+        [
+            {"role": "system", "content": TASKS_SYSTEM_PROMPT},
+            {"role": "user", "content": context},
+        ],
+        GeneratedTaskSet,
+        name="task_set",
+        timeout=180,
+    )
+
+
+def build_grading_messages(
+    question: str, grading_notes: str, answer: str
+) -> list[dict[str, Any]]:
+    return [
+        {"role": "system", "content": GRADING_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"TASK:\n{question}\n\n"
+                f"GRADING NOTES:\n{grading_notes}\n\n"
+                f"LEARNER'S ANSWER:\n{answer}"
+            ),
+        },
+    ]
+
+
+def grade_answer(question: str, grading_notes: str, answer: str) -> TaskGrade:
+    return _structured_query(
+        build_grading_messages(question, grading_notes, answer),
+        TaskGrade,
+        name="task_grade",
+        timeout=120,
+    )
 
 
 if __name__ == "__main__":

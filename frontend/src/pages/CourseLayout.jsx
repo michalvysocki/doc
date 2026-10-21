@@ -19,7 +19,7 @@ function CourseLayout() {
     courseId,
     isMapView ? location.key : "topic",
   );
-  const topicMatch = useMatch("/courses/:courseId/topics/:topicId");
+  const topicMatch = useMatch("/courses/:courseId/topics/:topicId/*");
   const topicId = topicMatch?.params.topicId ?? null;
   const topicChat = useTopicChat(topicId, fileUpload);
   const mainRef = useRef(null);

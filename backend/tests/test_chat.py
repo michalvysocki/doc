@@ -1,10 +1,18 @@
 import uuid
 from datetime import UTC, datetime
 
-from src.chat import HISTORY_LIMIT, build_topic_chat_messages, format_course_outline
+from src.chat import (
+    HISTORY_LIMIT,
+    MAX_CHARS_IN_TASK_CONTEXT,
+    build_topic_chat_messages,
+    format_course_outline,
+    format_tasks_for_chat,
+)
 from src.schemas import (
     AttachmentOut,
+    AttemptOut,
     ChatMessageOut,
+    TaskOut,
     TopicDetail,
     TopicLink,
     TopicOut,
@@ -73,7 +81,7 @@ def test_outline_without_current_topic_has_no_marker():
 
 
 def test_system_prompt_contains_course_outline_and_lesson():
-    messages = build_topic_chat_messages(make_topic_detail(), "- Basics", [], [])
+    messages = build_topic_chat_messages(make_topic_detail(), "- Basics", [], [], [])
     system = messages[0]
 
     assert system["role"] == "system"
@@ -84,17 +92,18 @@ def test_system_prompt_contains_course_outline_and_lesson():
 
 
 def test_missing_lesson_is_explained_to_the_model():
-    messages = build_topic_chat_messages(make_topic_detail(None), "", [], [])
+    messages = build_topic_chat_messages(make_topic_detail(None), "", [], [], [])
 
     assert "(The lesson has not been generated yet.)" in messages[0]["content"]
 
 
 def test_fragments_section_only_when_fragments_exist():
-    without = build_topic_chat_messages(make_topic_detail(), "", [], [])
+    without = build_topic_chat_messages(make_topic_detail(), "", [], [], [])
     with_fragments = build_topic_chat_messages(
         make_topic_detail(),
         "",
         [{"text": "chunk text", "metadata": {"filename": "notes.pdf"}}],
+        [],
         [],
     )
 
@@ -110,7 +119,7 @@ def test_history_is_limited_to_the_most_recent_messages():
         for i in range(1, 26)
     ]
 
-    messages = build_topic_chat_messages(make_topic_detail(), "", [], history)
+    messages = build_topic_chat_messages(make_topic_detail(), "", [], history, [])
 
     assert len(messages) == 1 + HISTORY_LIMIT
     assert messages[1]["content"] == "message 6"
@@ -120,9 +129,72 @@ def test_history_is_limited_to_the_most_recent_messages():
 def test_attachments_are_mentioned_in_message_content():
     history = [make_message(1, "user", "Look at this", ["notes.pdf", "plan.docx"])]
 
-    messages = build_topic_chat_messages(make_topic_detail(), "", [], history)
+    messages = build_topic_chat_messages(make_topic_detail(), "", [], history, [])
 
     assert messages[1] == {
         "role": "user",
         "content": "Look at this\n\n[Attached files: notes.pdf, plan.docx]",
     }
+
+
+def make_task(question: str, attempts: list[AttemptOut] | None = None) -> TaskOut:
+    return TaskOut(
+        id=uuid.uuid4(), position=0, question=question, attempts=attempts or []
+    )
+
+
+def make_attempt(answer: str, verdict=None, feedback=None) -> AttemptOut:
+    return AttemptOut(
+        id=1,
+        answer=answer,
+        verdict=verdict,
+        feedback=feedback,
+        created_at=datetime.now(UTC),
+    )
+
+
+def test_tasks_are_numbered_from_one_with_latest_attempt():
+    tasks = [
+        make_task(
+            "Explain moves",
+            [
+                make_attempt("first try", "incorrect", "Wrong"),
+                make_attempt("second try", "partially_correct", "Almost"),
+            ],
+        ),
+        make_task("Write a function"),
+    ]
+
+    assert format_tasks_for_chat(tasks).splitlines() == [
+        "Task 1: Explain moves",
+        "  Learner's latest answer (partially_correct): second try",
+        "  Feedback: Almost",
+        "Task 2: Write a function",
+        "  Not attempted yet.",
+    ]
+
+
+def test_ungraded_attempt_is_marked_and_has_no_feedback_line():
+    text = format_tasks_for_chat([make_task("Q", [make_attempt("A")])])
+
+    assert "Learner's latest answer (not graded): A" in text
+    assert "Feedback" not in text
+
+
+def test_long_texts_are_shortened():
+    long_answer = "x" * (MAX_CHARS_IN_TASK_CONTEXT + 100)
+
+    text = format_tasks_for_chat([make_task("Q", [make_attempt(long_answer)])])
+
+    assert ("x" * MAX_CHARS_IN_TASK_CONTEXT + "…") in text
+    assert ("x" * (MAX_CHARS_IN_TASK_CONTEXT + 1)) not in text
+
+
+def test_tasks_section_only_when_tasks_exist():
+    without = build_topic_chat_messages(make_topic_detail(), "", [], [], [])
+    with_tasks = build_topic_chat_messages(
+        make_topic_detail(), "", [], [], [make_task("Explain moves")]
+    )
+
+    assert "PRACTICE TASKS" not in without[0]["content"]
+    assert "PRACTICE TASKS:\nTask 1: Explain moves" in with_tasks[0]["content"]

@@ -22,14 +22,24 @@ from .courses import (
 )
 from .openrouter import OpenRouterError, generate_topic_map, send_query
 from .schemas import (
+    AttemptCreate,
+    AttemptOut,
     ChatMessageOut,
     CourseCreate,
     CourseOut,
     CourseSummary,
     RequestContent,
+    TaskOut,
     TopicChatReply,
     TopicDetail,
     TopicMessageCreate,
+)
+from .tasks import (
+    LessonMissingError,
+    create_tasks,
+    get_tasks,
+    grade_attempt,
+    submit_attempt,
 )
 from .vectorstore import (
     add_document,
@@ -261,3 +271,54 @@ def post_topic_message(topic_id: uuid.UUID, request: TopicMessageCreate):
         raise HTTPException(status_code=404, detail="Topic not found")
 
     return reply
+
+
+@app.get("/topics/{topic_id}/tasks", response_model=list[TaskOut])
+def read_tasks(topic_id: uuid.UUID):
+    if not topic_exists(topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return get_tasks(topic_id)
+
+
+@app.post("/topics/{topic_id}/tasks", response_model=list[TaskOut])
+def post_tasks(topic_id: uuid.UUID, regenerate: bool = False):
+    try:
+        tasks = create_tasks(topic_id, regenerate)
+    except LessonMissingError as e:
+        raise HTTPException(
+            status_code=409, detail="The lesson has not been generated yet"
+        ) from e
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if tasks is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return tasks
+
+
+@app.post("/tasks/{task_id}/attempts", status_code=201, response_model=AttemptOut)
+def post_attempt(task_id: uuid.UUID, request: AttemptCreate):
+    try:
+        attempt = submit_attempt(task_id, request.answer)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return attempt
+
+
+@app.post("/attempts/{attempt_id}/grade", response_model=AttemptOut)
+def post_grade(attempt_id: int):
+    try:
+        attempt = grade_attempt(attempt_id)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if attempt is None:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    return attempt
