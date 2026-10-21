@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, select
 
 from .database import SessionLocal
 from .indexing import chunk_text
@@ -9,7 +9,9 @@ from .models import Chunk, Document
 from .openrouter import get_embeddings
 
 
-def add_document(text: str, filename: str, course_id: uuid.UUID) -> str:
+def add_document(
+    text: str, filename: str, course_id: uuid.UUID, topic_id: uuid.UUID | None = None
+) -> str:
     """
     Divides text into chunks, generates embeddings and saves
     the document with its chunks in the database.
@@ -18,6 +20,7 @@ def add_document(text: str, filename: str, course_id: uuid.UUID) -> str:
         text (str): text to chunk and save
         filename (str): file's name
         course_id (uuid.UUID): course the document belongs to
+        topic_id (uuid.UUID | None): topic, if the document is a generated lesson
 
     Returns:
         str: returns document's uuid
@@ -30,6 +33,7 @@ def add_document(text: str, filename: str, course_id: uuid.UUID) -> str:
     document = Document(
         id=document_id,
         course_id=course_id,
+        topic_id=topic_id,
         filename=filename,
         chunks=[
             Chunk(chunk_index=i, text=chunk, embedding=embedding)
@@ -44,7 +48,7 @@ def add_document(text: str, filename: str, course_id: uuid.UUID) -> str:
 
 
 def retrieve_chunks(
-    query: str, file_uuids: list[uuid.UUID], n_results: int = 4
+    query: str, file_uuids: list[uuid.UUID], n_results: int = 6
 ) -> list[dict[str, Any]]:
     """
     Takes a query, generates an embedding for it and finds the most similar
@@ -66,7 +70,14 @@ def retrieve_chunks(
     distance = Chunk.embedding.cosine_distance(query_vector).label("distance")
 
     statement = (
-        select(Chunk.text, Chunk.chunk_index, Document.id, Document.filename, distance)
+        select(
+            Chunk.text,
+            Chunk.chunk_index,
+            Document.id,
+            Document.filename,
+            Document.topic_id,
+            distance,
+        )
         .join(Chunk.document)
         .where(Chunk.document_id.in_(file_uuids))
         .order_by(distance)
@@ -83,6 +94,7 @@ def retrieve_chunks(
                 "filename": row.filename,
                 "chunk_index": row.chunk_index,
                 "file_uuid": str(row.id),
+                "is_lesson": row.topic_id is not None,
             },
             "distance": row.distance,
         }
@@ -108,15 +120,22 @@ def delete_document(file_uuid: uuid.UUID) -> bool:
     return result.rowcount > 0
 
 
-def get_course_document_ids(course_id: uuid.UUID) -> list[uuid.UUID]:
+def get_course_document_ids(
+    course_id: uuid.UUID, exclude_topic_id: uuid.UUID | None = None
+) -> list[uuid.UUID]:
     """
-    Returns ids of all documents that belong to the course.
+    Returns ids of all documents (uploaded files and lessons) of the course,
+    optionally without the lesson of one topic.
     """
 
-    with SessionLocal() as session:
-        return list(
-            session.scalars(select(Document.id).where(Document.course_id == course_id))
+    condition = Document.course_id == course_id
+    if exclude_topic_id is not None:
+        condition = and_(
+            condition, Document.topic_id.is_distinct_from(exclude_topic_id)
         )
+
+    with SessionLocal() as session:
+        return list(session.scalars(select(Document.id).where(condition)))
 
 
 if __name__ == "__main__":

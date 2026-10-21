@@ -252,11 +252,12 @@ def format_tasks_for_chat(tasks: list[TaskOut]) -> str:
 
 
 def _fragments_section(fragments: list[dict]) -> str:
-    fragment_texts = [
-        f"--- Fragment of the document: {f['metadata']['filename']} ---\n{f['text']}"
-        for f in fragments
-    ]
-    return "DOCUMENT FRAGMENTS:\n" + "\n\n".join(fragment_texts)
+    texts = []
+    for fragment in fragments:
+        source = "lesson" if fragment["metadata"].get("is_lesson") else "document"
+        name = fragment["metadata"]["filename"]
+        texts.append(f"--- Fragment of the {source}: {name} ---\n{fragment['text']}")
+    return "COURSE MATERIALS:\n" + "\n\n".join(texts)
 
 
 def _history_messages(history: list[ChatMessageOut]) -> list[dict]:
@@ -442,7 +443,10 @@ def send_topic_message(
 
     def build(history: list[ChatMessageOut]) -> list[dict[str, Any]]:
         fragments = retrieve_chunks(
-            query=content, file_uuids=get_course_document_ids(topic.course_id)
+            query=content,
+            file_uuids=get_course_document_ids(
+                topic.course_id, exclude_topic_id=topic_id
+            ),
         )
         return build_topic_chat_messages(topic, outline, fragments, history, tasks)
 

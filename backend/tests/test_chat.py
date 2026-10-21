@@ -115,7 +115,7 @@ def test_fragments_section_only_when_fragments_exist():
 
     expected = "--- Fragment of the document: notes.pdf ---\nchunk text"
 
-    assert "DOCUMENT FRAGMENTS" not in without[0]["content"]
+    assert "COURSE MATERIALS" not in without[0]["content"]
     assert expected in with_fragments[0]["content"]
 
 
@@ -271,7 +271,7 @@ def test_course_chat_system_prompt_contains_goal_progress_and_outline():
     assert "LEARNER'S GOAL: I want to learn Rust" in system
     assert "PROGRESS: 1 / 3 topics completed" in system
     assert "COURSE OUTLINE:\n- Basics [lesson ready]" in system
-    assert "DOCUMENT FRAGMENTS" not in system
+    assert "COURSE MATERIALS" not in system
 
 
 def test_course_chat_includes_fragments_and_limited_history():
@@ -285,3 +285,16 @@ def test_course_chat_includes_fragments_and_limited_history():
     )
     assert len(messages) == 1 + HISTORY_LIMIT
     assert messages[-1]["content"] == "message 25"
+
+
+def test_fragments_are_labelled_as_lesson_or_document():
+    fragments = [
+        {"text": "a", "metadata": {"filename": "Borrowing", "is_lesson": True}},
+        {"text": "b", "metadata": {"filename": "notes.pdf", "is_lesson": False}},
+    ]
+
+    messages = build_course_chat_messages(make_course([]), "", fragments, [])
+    system = messages[0]["content"]
+
+    assert "COURSE MATERIALS:\n--- Fragment of the lesson: Borrowing ---\na" in system
+    assert "--- Fragment of the document: notes.pdf ---\nb" in system

@@ -1,12 +1,13 @@
+import logging
 import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy import and_, delete, exists, func, select, update
 
 from .database import SessionLocal
-from .models import Course, Task, TaskAttempt, Topic
-from .openrouter import generate_topic_explanation
+from .models import Course, Document, Task, TaskAttempt, Topic
+from .openrouter import OpenRouterError, generate_topic_explanation
 from .schemas import (
     CourseOut,
     CourseProgress,
@@ -17,6 +18,9 @@ from .schemas import (
     TopicNode,
     TopicOut,
 )
+from .vectorstore import add_document
+
+logger = logging.getLogger(__name__)
 
 
 def _flatten_topics(
@@ -340,7 +344,65 @@ def create_explanation(topic_id: uuid.UUID) -> TopicDetail | None:
             update(Topic).where(Topic.id == topic_id).values(explanation=explanation)
         )
 
+    try:
+        index_lesson(topic_id)
+    except OpenRouterError:
+        logger.warning("Could not index lesson %s for RAG", topic_id, exc_info=True)
+
     return topic.model_copy(update={"explanation": explanation})
+
+
+def index_lesson(topic_id: uuid.UUID) -> bool:
+    """
+    (Re)indexes the lesson of a topic for RAG: replaces its lesson document
+    with fresh chunks and embeddings.
+
+    Returns:
+        bool: False if the topic does not exist or has no lesson
+
+    Raises:
+        OpenRouterError: if generating embeddings fails
+    """
+
+    with SessionLocal() as session:
+        topic = session.get(Topic, topic_id)
+        if topic is None or topic.explanation is None:
+            return False
+        course_id, title, explanation = topic.course_id, topic.title, topic.explanation
+
+    with SessionLocal() as session, session.begin():
+        session.execute(delete(Document).where(Document.topic_id == topic_id))
+
+    add_document(explanation, title, course_id, topic_id=topic_id)
+    return True
+
+
+def index_missing_lessons() -> int:
+    """
+    Indexes all lessons that have no lesson document yet. Lessons whose
+    embeddings fail are skipped and stay missing for the next run.
+
+    Returns:
+        int: number of indexed lessons
+    """
+
+    has_document = exists().where(Document.topic_id == Topic.id)
+    with SessionLocal() as session:
+        topic_ids = list(
+            session.scalars(
+                select(Topic.id).where(Topic.explanation.is_not(None), ~has_document)
+            )
+        )
+
+    indexed = 0
+    for topic_id in topic_ids:
+        try:
+            if index_lesson(topic_id):
+                indexed += 1
+        except OpenRouterError:
+            logger.warning("Could not index lesson %s for RAG", topic_id, exc_info=True)
+
+    return indexed
 
 
 def course_exists(course_id: uuid.UUID) -> bool:
