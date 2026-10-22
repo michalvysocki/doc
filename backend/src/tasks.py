@@ -5,9 +5,9 @@ from sqlalchemy import func, select, update
 
 from .courses import get_topic
 from .database import SessionLocal
-from .models import Task, TaskAttempt
+from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_tasks, grade_answer
-from .schemas import AttemptOut, TaskOut
+from .schemas import AttemptOut, GeneratedTask, TaskOut
 
 
 class LessonMissingError(Exception):
@@ -105,6 +105,41 @@ def create_tasks(topic_id: uuid.UUID, regenerate: bool = False) -> list[TaskOut]
         )
 
     return get_tasks(topic_id)
+
+
+def add_tasks(topic_id: uuid.UUID, tasks: list[GeneratedTask]) -> list[int]:
+    """
+    Appends tasks after the active tasks of a topic.
+
+    Returns:
+        list[int]: numbers of the new tasks, as the learner sees them
+
+    Raises:
+        LessonMissingError: if the topic does not exist or has no lesson yet
+    """
+
+    with SessionLocal() as session, session.begin():
+        topic = session.get(Topic, topic_id)
+        if topic is None or topic.explanation is None:
+            raise LessonMissingError()
+
+        last = session.scalar(
+            select(func.max(Task.position)).where(
+                Task.topic_id == topic_id, Task.archived_at.is_(None)
+            )
+        )
+        start = 0 if last is None else last + 1
+        session.add_all(
+            Task(
+                topic_id=topic_id,
+                position=start + i,
+                question=task.question,
+                grading_notes=task.grading_notes,
+            )
+            for i, task in enumerate(tasks)
+        )
+
+    return [start + i + 1 for i in range(len(tasks))]
 
 
 def submit_attempt(task_id: uuid.UUID, answer: str) -> AttemptOut | None:

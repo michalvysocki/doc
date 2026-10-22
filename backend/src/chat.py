@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import and_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from .course_tools import COURSE_TOOLS, run_course_tool
+from .course_tools import COURSE_TOOLS, TOPIC_TOOLS, run_course_tool, run_topic_tool
 from .courses import get_course, get_topic
 from .database import SessionLocal
 from .models import ChatMessage, Conversation, Document
@@ -285,12 +285,16 @@ def build_topic_chat_messages(
 
     path = " > ".join([*(link.title for link in topic.path), topic.title])
     lesson = topic.explanation or "(The lesson has not been generated yet.)"
+    level = len(topic.path) + 1
+    subtopics = "\n".join(f"- {link.title} (id: {link.id})" for link in topic.subtopics)
 
     sections = [
         TOPIC_CHAT_SYSTEM_PROMPT,
         f"COURSE: {topic.course_title}",
         f"COURSE OUTLINE:\n{outline}",
         f"CURRENT LESSON: {path}\n{topic.description}\n\n{lesson}",
+        f"SUBTOPICS OF THIS LESSON (lesson level {level} of max 3):\n"
+        + (subtopics or "(none)"),
     ]
     if fragments:
         sections.append(_fragments_section(fragments))
@@ -416,6 +420,15 @@ def _exchange(
     )
 
 
+def add_course_note(course_id: uuid.UUID, text: str) -> ChatMessageOut:
+    """
+    Adds a note about the learner's action (e.g. a confirmed deletion) to the
+    course conversation, so the model knows about it in the next message.
+    """
+
+    return add_message(get_or_create_conversation(course_id), "user", text)
+
+
 def send_topic_message(
     topic_id: uuid.UUID,
     content: str,
@@ -456,6 +469,10 @@ def send_topic_message(
         file_uuids,
         images,
         build,
+        tools=TOPIC_TOOLS,
+        run_tool=lambda name, arguments: run_topic_tool(
+            topic.course_id, topic_id, name, arguments
+        ),
     )
 
 

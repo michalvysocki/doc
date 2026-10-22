@@ -298,3 +298,16 @@ def test_fragments_are_labelled_as_lesson_or_document():
 
     assert "COURSE MATERIALS:\n--- Fragment of the lesson: Borrowing ---\na" in system
     assert "--- Fragment of the document: notes.pdf ---\nb" in system
+
+
+def test_topic_prompt_lists_subtopics_with_ids_and_level():
+    topic = make_topic_detail()
+    without = build_topic_chat_messages(topic, "", [], [], [])
+    subtopic = TopicLink(id=uuid.uuid4(), title="Lifetimes")
+    with_subtopics = build_topic_chat_messages(
+        topic.model_copy(update={"subtopics": [subtopic]}), "", [], [], []
+    )
+
+    header = "SUBTOPICS OF THIS LESSON (lesson level 2 of max 3):\n"
+    assert header + "(none)" in without[0]["content"]
+    assert f"{header}- Lifetimes (id: {subtopic.id})" in with_subtopics[0]["content"]

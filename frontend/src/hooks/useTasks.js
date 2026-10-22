@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "../utils/api";
 
-export default function useTasks(topicId, hasLesson) {
+export default function useTasks(topicId, hasLesson, refreshKey = 0) {
   const [result, setResult] = useState({
     topicId: null,
     status: "loading",
@@ -52,6 +52,26 @@ export default function useTasks(topicId, hasLesson) {
       ignore = true;
     };
   }, [topicId, hasLesson]);
+
+  useEffect(() => {
+    if (refreshKey === 0) return;
+    let ignore = false;
+
+    fetchJson(`/topics/${topicId}/tasks`)
+      .then((tasks) => {
+        if (ignore) return;
+        setResult((prev) =>
+          prev.topicId === topicId && prev.status === "ready"
+            ? { ...prev, tasks }
+            : prev,
+        );
+      })
+      .catch((error) => console.error("Error while refreshing tasks: ", error));
+
+    return () => {
+      ignore = true;
+    };
+  }, [topicId, refreshKey]);
 
   async function regenerate() {
     const forTopicId = topicId;

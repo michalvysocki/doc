@@ -1,9 +1,10 @@
 import logging
 import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import and_, delete, exists, func, select, update
+from sqlalchemy import and_, delete, exists, func, select, true, update
+from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .models import Course, Document, Task, TaskAttempt, Topic
@@ -102,7 +103,64 @@ def _course_progress(topics: list[TopicOut]) -> CourseProgress:
 
 
 class TopicPlacementError(Exception):
-    """Raised when new topics cannot be placed where requested."""
+    """Raised when topics cannot be placed where requested."""
+
+
+FIRST = "first"
+
+
+def _make_room(
+    session: Session,
+    course_id: uuid.UUID,
+    parent_id: uuid.UUID | None,
+    after_topic_id: uuid.UUID | Literal["first"] | None,
+    count: int,
+    exclude_id: uuid.UUID | None = None,
+) -> int:
+    """
+    Validates the place in the tree and shifts the following siblings to make
+    room for `count` topics. `after_topic_id` "first" places them at the start,
+    None at the end.
+
+    Returns:
+        int: position of the first inserted topic
+
+    Raises:
+        TopicPlacementError: if the parent or the sibling is not valid
+    """
+
+    if parent_id is not None:
+        parent = session.get(Topic, parent_id)
+        if parent is None or parent.course_id != course_id:
+            raise TopicPlacementError("parent topic not found in this course")
+
+    siblings = and_(
+        Topic.course_id == course_id,
+        Topic.parent_id == parent_id
+        if parent_id is not None
+        else Topic.parent_id.is_(None),
+        Topic.id != exclude_id if exclude_id is not None else true(),
+    )
+
+    if after_topic_id == FIRST:
+        start = 0
+    elif after_topic_id is not None:
+        after = session.get(Topic, after_topic_id)
+        if after is None or after.course_id != course_id:
+            raise TopicPlacementError("sibling topic not found in this course")
+        if after.parent_id != parent_id:
+            raise TopicPlacementError("sibling topic has a different parent")
+        start = after.position + 1
+    else:
+        last = session.scalar(select(func.max(Topic.position)).where(siblings))
+        start = 0 if last is None else last + 1
+
+    session.execute(
+        update(Topic)
+        .where(siblings, Topic.position >= start)
+        .values(position=Topic.position + count)
+    )
+    return start
 
 
 def add_topics(
@@ -123,40 +181,80 @@ def add_topics(
     """
 
     with SessionLocal() as session, session.begin():
-        if parent_id is not None:
-            parent = session.get(Topic, parent_id)
-            if parent is None or parent.course_id != course_id:
-                raise TopicPlacementError("parent topic not found in this course")
-
-        siblings = and_(
-            Topic.course_id == course_id,
-            Topic.parent_id == parent_id
-            if parent_id is not None
-            else Topic.parent_id.is_(None),
-        )
-
-        if after_topic_id is not None:
-            after = session.get(Topic, after_topic_id)
-            if after is None or after.course_id != course_id:
-                raise TopicPlacementError("sibling topic not found in this course")
-            if after.parent_id != parent_id:
-                raise TopicPlacementError("sibling topic has a different parent")
-            start = after.position + 1
-        else:
-            last = session.scalar(select(func.max(Topic.position)).where(siblings))
-            start = 0 if last is None else last + 1
-
-        session.execute(
-            update(Topic)
-            .where(siblings, Topic.position >= start)
-            .values(position=Topic.position + len(nodes))
-        )
-
+        start = _make_room(session, course_id, parent_id, after_topic_id, len(nodes))
         topics = _flatten_topics(nodes, course_id, parent_id, start_position=start)
         titles = [topic.title for topic in topics]
         session.add_all(topics)
 
     return titles
+
+
+def move_topic(
+    course_id: uuid.UUID,
+    topic_id: uuid.UUID,
+    parent_id: uuid.UUID | None,
+    after_topic_id: uuid.UUID | Literal["first"] | None,
+) -> str:
+    """
+    Moves a topic with its whole subtree under a new parent, after the given
+    sibling ("first" for the start, None for the end).
+
+    Returns:
+        str: the title of the moved topic
+
+    Raises:
+        TopicPlacementError: if the topic, the parent or the sibling is not
+            valid, or the move would put the topic inside itself
+    """
+
+    with SessionLocal() as session, session.begin():
+        topic = session.get(Topic, topic_id)
+        if topic is None or topic.course_id != course_id:
+            raise TopicPlacementError("topic not found in this course")
+        if after_topic_id == topic_id:
+            raise TopicPlacementError("a topic cannot be placed after itself")
+
+        ancestor_id = parent_id
+        while ancestor_id is not None:
+            if ancestor_id == topic_id:
+                raise TopicPlacementError("a topic cannot be moved inside itself")
+            ancestor = session.get(Topic, ancestor_id)
+            ancestor_id = ancestor.parent_id if ancestor else None
+
+        topic.position = _make_room(
+            session, course_id, parent_id, after_topic_id, 1, exclude_id=topic_id
+        )
+        topic.parent_id = parent_id
+        title = topic.title
+
+    return title
+
+
+def rename_topic(
+    course_id: uuid.UUID, topic_id: uuid.UUID, title: str, description: str | None
+) -> str | None:
+    """
+    Renames a topic and its lesson document used for RAG.
+
+    Returns:
+        str | None: the old title, or None if the topic is not in this course
+    """
+
+    with SessionLocal() as session, session.begin():
+        topic = session.get(Topic, topic_id)
+        if topic is None or topic.course_id != course_id:
+            return None
+
+        old_title = topic.title
+        topic.title = title
+        if description is not None:
+            topic.description = description
+
+        session.execute(
+            update(Document).where(Document.topic_id == topic_id).values(filename=title)
+        )
+
+    return old_title
 
 
 def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:
@@ -317,9 +415,12 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
         )
 
 
-def create_explanation(topic_id: uuid.UUID) -> TopicDetail | None:
+def create_explanation(
+    topic_id: uuid.UUID, regenerate: bool = False
+) -> TopicDetail | None:
     """
-    Generates and saves an explanation for a topic, unless it already has one.
+    Generates and saves an explanation for a topic. Without regenerate returns
+    the existing explanation if there is one. With regenerate replaces it.
 
     Returns:
         TopicDetail | None: the topic with explanation, or None if it does not exist
@@ -328,7 +429,7 @@ def create_explanation(topic_id: uuid.UUID) -> TopicDetail | None:
     topic = get_topic(topic_id)
     if topic is None:
         return None
-    if topic.explanation is not None:
+    if topic.explanation is not None and not regenerate:
         return topic
 
     explanation = generate_topic_explanation(

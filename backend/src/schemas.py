@@ -120,6 +120,64 @@ class AddTopicsArgs(BaseModel):
     topics: list[TopicNode] = Field(description="Topics to add, may have subtopics")
 
 
+class RenameTopicArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(description="Id of the topic to rename, from the outline")
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ] = Field(description="New short topic name")
+    description: str | None = Field(
+        description="New description, or null to keep the current one"
+    )
+
+
+class MoveTopicArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(description="Id of the topic to move, from the outline")
+    parent_topic_id: str | None = Field(
+        description="Id of the new parent topic; null to make it a top-level topic"
+    )
+    after_topic_id: str | None = Field(
+        description=(
+            'Id of the new sibling after which to place it; "first" to put it '
+            "first; null to put it at the end"
+        )
+    )
+
+
+class TopicDeletionOut(BaseModel):
+    id: uuid.UUID
+    topic_id: uuid.UUID
+    topic_title: str
+    subtopics: int
+    lessons: int
+    tasks: int
+    attempts: int
+
+
+class ProposeTopicDeletionArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(description="Id of the topic to delete, from the outline")
+
+
+class AddSubtopicsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    after_topic_id: str | None = Field(
+        description=(
+            "Id of the existing subtopic after which to insert; null to add at the end"
+        )
+    )
+    topics: list[TopicNode] = Field(
+        description=(
+            "Subtopics to add to the current lesson, may have their own subtopics"
+        )
+    )
+
+
 class GeneratedTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +193,19 @@ class GeneratedTaskSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tasks: list[GeneratedTask] = Field(description="Tasks from easier to harder")
+
+
+MAX_TASKS_PER_TOOL_CALL = 5
+
+
+class AddTasksArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tasks: list[GeneratedTask] = Field(
+        min_length=1,
+        max_length=MAX_TASKS_PER_TOOL_CALL,
+        description="Tasks to add at the end of this lesson's task list",
+    )
 
 
 class AttemptOut(BaseModel):

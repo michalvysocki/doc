@@ -4,7 +4,7 @@ import useTasks from "../hooks/useTasks";
 import TaskCard from "../components/TaskCard";
 
 function TasksTab() {
-  const { topic } = useOutletContext();
+  const { topic, courseVersion } = useOutletContext();
   const hasLesson = topic.explanation !== null;
   const {
     status,
@@ -14,7 +14,7 @@ function TasksTab() {
     regenerate,
     submitAttempt,
     regradeAttempt,
-  } = useTasks(topic.id, hasLesson);
+  } = useTasks(topic.id, hasLesson, courseVersion);
 
   function handleRegenerate() {
     const confirmed = window.confirm(

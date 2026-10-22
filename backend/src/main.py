@@ -10,6 +10,7 @@ from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 
 from .chat import (
+    add_course_note,
     list_course_messages,
     list_topic_messages,
     send_course_message,
@@ -36,6 +37,7 @@ from .schemas import (
     CourseSummary,
     MessageCreate,
     TaskOut,
+    TopicDeletionOut,
     TopicDetail,
 )
 from .tasks import (
@@ -44,6 +46,11 @@ from .tasks import (
     get_tasks,
     grade_attempt,
     submit_attempt,
+)
+from .topic_deletions import (
+    cancel_topic_deletion,
+    confirm_topic_deletion,
+    list_topic_deletions,
 )
 from .vectorstore import add_document, delete_document
 
@@ -180,9 +187,9 @@ def read_topic(topic_id: uuid.UUID):
 
 
 @app.post("/topics/{topic_id}/explanation", response_model=TopicDetail)
-def post_topic_explanation(topic_id: uuid.UUID):
+def post_topic_explanation(topic_id: uuid.UUID, regenerate: bool = False):
     try:
-        topic = create_explanation(topic_id)
+        topic = create_explanation(topic_id, regenerate)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -287,3 +294,31 @@ def post_course_message(course_id: uuid.UUID, request: MessageCreate):
         raise HTTPException(status_code=404, detail="Course not found")
 
     return reply
+
+
+@app.get("/courses/{course_id}/topic-deletions", response_model=list[TopicDeletionOut])
+def read_topic_deletions(course_id: uuid.UUID):
+    if not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return list_topic_deletions(course_id)
+
+
+@app.post("/topic-deletions/{deletion_id}/confirm", response_model=ChatMessageOut)
+def post_confirm_topic_deletion(deletion_id: uuid.UUID):
+    result = confirm_topic_deletion(deletion_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Deletion proposal not found")
+
+    course_id, title = result
+    return add_course_note(course_id, f"[Deleted topic: {title}]")
+
+
+@app.post("/topic-deletions/{deletion_id}/cancel", response_model=ChatMessageOut)
+def post_cancel_topic_deletion(deletion_id: uuid.UUID):
+    result = cancel_topic_deletion(deletion_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Deletion proposal not found")
+
+    course_id, title = result
+    return add_course_note(course_id, f"[Cancelled deletion of topic: {title}]")

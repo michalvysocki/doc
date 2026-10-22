@@ -8,6 +8,7 @@ import {
 } from "react-router";
 import useCourse from "../hooks/useCourse";
 import usePersistentChat from "../hooks/usePersistentChat";
+import useTopicDeletions from "../hooks/useTopicDeletions";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
@@ -22,11 +23,16 @@ function CourseLayout() {
   );
   const topicMatch = useMatch("/courses/:courseId/topics/:topicId/*");
   const topicId = topicMatch?.params.topicId ?? null;
-  const chatPath = topicId
-    ? `/topics/${topicId}/messages`
-    : `/courses/${courseId}/messages`;
+  const coursePath = `/courses/${courseId}/messages`;
+  const chatPath = topicId ? `/topics/${topicId}/messages` : coursePath;
   const persistentChat = usePersistentChat(chatPath, fileUpload, {
     onCourseChanged: () => setCourseVersion((version) => version + 1),
+  });
+  const topicDeletions = useTopicDeletions(courseId, courseVersion, {
+    onResolved: (note, action) => {
+      persistentChat.appendMessage(coursePath, note);
+      if (action === "confirm") setCourseVersion((version) => version + 1);
+    },
   });
   const mainRef = useRef(null);
 
@@ -42,7 +48,7 @@ function CourseLayout() {
         ) : course === null ? (
           <p className="text-sm text-ink/60">Loading course...</p>
         ) : (
-          <Outlet context={{ course }} />
+          <Outlet context={{ course, courseVersion }} />
         )}
       </main>
 
@@ -52,6 +58,7 @@ function CourseLayout() {
         fileUpload={fileUpload}
         isOpen={isChatOpen}
         onToggle={() => setIsChatOpen((prev) => !prev)}
+        topicDeletions={topicId ? null : topicDeletions}
       />
     </>
   );

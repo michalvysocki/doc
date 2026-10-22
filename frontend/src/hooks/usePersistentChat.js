@@ -48,6 +48,13 @@ export default function usePersistentChat(
     setChat((prev) => (prev.path === forPath ? update(prev) : prev));
   }
 
+  function appendMessage(forPath, message) {
+    updateChat(forPath, (prev) => ({
+      ...prev,
+      messages: [...prev.messages, message],
+    }));
+  }
+
   async function handleSend() {
     const sendingPath = path;
     const { documents, images } = fileUpload;
@@ -114,6 +121,7 @@ export default function usePersistentChat(
     setUserInput,
     messageHistory,
     handleSend,
+    appendMessage,
     isLoading,
     error: isCurrent ? chat.error : null,
   };

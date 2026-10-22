@@ -1,8 +1,16 @@
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import MessageHistory from "./MessageHistory";
 import MessageComposer from "./MessageComposer";
+import TopicDeletionCards from "./TopicDeletionCards";
 
-function ChatPanel({ chat, title, fileUpload, isOpen, onToggle }) {
+function ChatPanel({
+  chat,
+  title,
+  fileUpload,
+  isOpen,
+  onToggle,
+  topicDeletions,
+}) {
   if (!isOpen) {
     return (
       <aside className="w-12 shrink-0 border-l border-line flex flex-col items-center py-3">
@@ -36,6 +44,7 @@ function ChatPanel({ chat, title, fileUpload, isOpen, onToggle }) {
         messageHistory={chat.messageHistory}
         isLoading={chat.isLoading}
       />
+      {topicDeletions && <TopicDeletionCards topicDeletions={topicDeletions} />}
       <div className="pb-4 px-4">
         <MessageComposer chat={chat} fileUpload={fileUpload} />
       </div>

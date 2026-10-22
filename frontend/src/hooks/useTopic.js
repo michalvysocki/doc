@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "../utils/api";
 
-export default function useTopic(topicId) {
+export default function useTopic(topicId, refreshKey = 0) {
   const [result, setResult] = useState({
     topicId: null,
     topic: null,
     error: null,
   });
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -45,10 +46,56 @@ export default function useTopic(topicId) {
     };
   }, [topicId]);
 
+  useEffect(() => {
+    if (refreshKey === 0) return;
+    let ignore = false;
+
+    fetchJson(`/topics/${topicId}`)
+      .then((fresh) => {
+        if (ignore) return;
+        setResult((prev) =>
+          prev.topicId === topicId && prev.topic
+            ? { ...prev, topic: { ...prev.topic, subtopics: fresh.subtopics } }
+            : prev,
+        );
+      })
+      .catch((error) => console.error("Error while refreshing topic: ", error));
+
+    return () => {
+      ignore = true;
+    };
+  }, [topicId, refreshKey]);
+
+  async function regenerate() {
+    const forTopicId = topicId;
+    setIsRegenerating(true);
+
+    try {
+      const topic = await fetchJson(
+        `/topics/${forTopicId}/explanation?regenerate=true`,
+        { method: "POST" },
+      );
+      setResult((prev) =>
+        prev.topicId === forTopicId
+          ? { topicId: forTopicId, topic, error: null }
+          : prev,
+      );
+    } catch (error) {
+      console.error("Error while regenerating lesson: ", error);
+      setResult((prev) =>
+        prev.topicId === forTopicId ? { ...prev, error: error.message } : prev,
+      );
+    } finally {
+      setIsRegenerating(false);
+    }
+  }
+
   const isCurrent = result.topicId === topicId;
 
   return {
     topic: isCurrent ? result.topic : null,
     error: isCurrent ? result.error : null,
+    isRegenerating,
+    regenerate,
   };
 }
