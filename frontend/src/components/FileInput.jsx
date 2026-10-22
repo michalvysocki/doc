@@ -1,6 +1,6 @@
 import { Paperclip } from "lucide-react";
 
-function FileInput({ inputRef, onChange }) {
+function FileInput({ inputRef, onChange, accept }) {
   return (
     <div>
       <input
@@ -8,9 +8,11 @@ function FileInput({ inputRef, onChange }) {
         ref={inputRef}
         onChange={onChange}
         multiple
+        accept={accept}
         className="hidden"
       />
       <button
+        type="button"
         onClick={() => inputRef.current.click()}
         className="text-ink/50 hover:text-accent transition-colors p-2"
       >

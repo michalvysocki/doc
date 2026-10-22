@@ -19,6 +19,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
 WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH", "on").lower() != "off"
 MAX_SOURCES = 8
+EMBEDDING_BATCH_SIZE = 100
 
 WEB_SEARCH_TOOL = {
     "type": "openrouter:web_search",
@@ -31,9 +32,10 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "to advanced topics. Use at most 3 levels of nesting. Each topic should be "
     "specific enough to study in a single session. Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
-    "request. "
-    "You can search the web when the course needs current information, such as "
-    "new versions or recent tools; do not search for well-established subjects."
+    "request. If course materials are given, base the map on them where they are "
+    "relevant and cover what they contain. You can search the web when the course "
+    "needs current information, such as new versions or recent tools; do not "
+    "search for well-established subjects."
 )
 
 REBUILD_SYSTEM_PROMPT = (
@@ -277,17 +279,32 @@ def send_query_with_tools(
 
 
 def get_embeddings(texts: list[str]) -> list[list[float]]:
-    data = _post_to_openrouter(
-        EMBEDDING_URL, {"model": EMBEDDING_MODEL, "input": texts}, timeout=60
-    )
+    """
+    Returns embeddings for the texts, in the same order, sending them in
+    batches of EMBEDDING_BATCH_SIZE so large documents stay within the
+    provider's limits per request.
 
-    try:
-        sorted_data = sorted(data["data"], key=lambda x: x["index"])
-        return [item["embedding"] for item in sorted_data]
-    except (KeyError, TypeError) as e:
-        raise OpenRouterError(
-            "Unexpected embedding response format from OpenRouter"
-        ) from e
+    Raises:
+        OpenRouterError: if a request fails or the response is malformed
+    """
+
+    embeddings: list[list[float]] = []
+    for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[start : start + EMBEDDING_BATCH_SIZE]
+        data = _post_to_openrouter(
+            EMBEDDING_URL, {"model": EMBEDDING_MODEL, "input": batch}, timeout=60
+        )
+        try:
+            sorted_data = sorted(data["data"], key=lambda x: x["index"])
+            batch_embeddings = [item["embedding"] for item in sorted_data]
+        except (KeyError, TypeError) as e:
+            raise OpenRouterError(
+                "Unexpected embedding response format from OpenRouter"
+            ) from e
+        if len(batch_embeddings) != len(batch):
+            raise OpenRouterError("OpenRouter returned a wrong number of embeddings")
+        embeddings.extend(batch_embeddings)
+    return embeddings
 
 
 def _structured_query_with_sources[T: BaseModel](
@@ -344,12 +361,15 @@ def _structured_query[T: BaseModel](
 
 
 def generate_topic_map(
-    initial_prompt: str,
+    initial_prompt: str, materials: str | None = None
 ) -> tuple[TopicMap, list[dict[str, Any]]]:
     return _structured_query_with_sources(
         [
             {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
-            {"role": "user", "content": initial_prompt},
+            {
+                "role": "user",
+                "content": _with_extras(initial_prompt, None, materials),
+            },
         ],
         TopicMap,
         name="topic_map",

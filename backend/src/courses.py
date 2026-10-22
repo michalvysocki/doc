@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .models import Course, Document, Task, TaskAttempt, Topic
-from .openrouter import OpenRouterError, generate_topic_explanation
+from .openrouter import (
+    OpenRouterError,
+    generate_topic_explanation,
+    generate_topic_map,
+)
 from .outline import format_course_outline
 from .schemas import (
     CourseOut,
@@ -278,18 +282,68 @@ def save_course(
     """
 
     course_id = uuid.uuid4()
-    course = Course(
-        id=course_id,
-        title=topic_map.course_title,
-        initial_prompt=initial_prompt,
-        sources=sources or None,
-    )
-    topics = _flatten_topics(topic_map.topics, course_id)
 
     with SessionLocal() as session, session.begin():
+        course = Course(id=course_id, initial_prompt=initial_prompt)
         session.add(course)
-        session.flush()
-        session.add_all(topics)
+        _add_topic_map(session, course, topic_map, sources)
+
+    return course_id
+
+
+def _add_topic_map(
+    session: Session,
+    course: Course,
+    topic_map: TopicMap,
+    sources: list[dict[str, Any]] | None,
+) -> None:
+    """Gives the course its title and sources and adds its whole topic tree."""
+
+    course.title = topic_map.course_title
+    course.sources = sources or None
+    session.flush()
+    session.add_all(_flatten_topics(topic_map.topics, course.id))
+
+
+def create_course_with_files(
+    initial_prompt: str, files: list[tuple[str, str]]
+) -> uuid.UUID:
+    """
+    Creates a course from the prompt and the texts of uploaded files: the files
+    are saved as course documents first, so their relevant fragments can be
+    used to generate the map. If anything fails, the course is deleted with
+    its documents.
+
+    Returns:
+        uuid.UUID: id of the created course
+
+    Raises:
+        OpenRouterError: if embeddings or the model request fail
+        DocumentTooLargeError: if a file has too much text
+    """
+
+    course_id = uuid.uuid4()
+    with SessionLocal() as session, session.begin():
+        session.add(
+            Course(
+                id=course_id, title=initial_prompt[:255], initial_prompt=initial_prompt
+            )
+        )
+
+    try:
+        for filename, text in files:
+            add_document(text, filename, course_id)
+        materials, file_sources = get_file_materials(course_id, initial_prompt)
+        topic_map, web_sources = generate_topic_map(initial_prompt, materials)
+
+        with SessionLocal() as session, session.begin():
+            course = session.get(Course, course_id)
+            _add_topic_map(
+                session, course, topic_map, merge_sources(web_sources, file_sources)
+            )
+    except Exception:
+        delete_course(course_id)
+        raise
 
     return course_id
 

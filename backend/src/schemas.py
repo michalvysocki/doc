@@ -91,6 +91,12 @@ class CourseSummary(BaseModel):
     created_at: datetime
 
 
+class CourseFileOut(BaseModel):
+    id: uuid.UUID
+    filename: str
+    created_at: datetime
+
+
 class TopicLink(BaseModel):
     id: uuid.UUID
     title: str

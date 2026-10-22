@@ -22,6 +22,7 @@ function AttachmentCard({ name, typeLabel, thumbnail, onRemove }) {
 
       {onRemove && (
         <button
+          type="button"
           onClick={onRemove}
           className="text-ink/40 hover:text-warn shrink-0"
         >

@@ -16,8 +16,8 @@ function RootLayout() {
 
   const navigate = useNavigate();
 
-  async function handleCreateCourse(initialPrompt) {
-    const created = await creation.createCourse(initialPrompt);
+  async function handleCreateCourse(initialPrompt, files) {
+    const created = await creation.createCourse(initialPrompt, files);
     if (created) {
       coursesState.addCourse(created);
       navigate(`/courses/${created.id}`);

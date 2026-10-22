@@ -5,7 +5,8 @@ import SendButton from "./SendButton";
 function MessageComposer({ chat, fileUpload, placeholder }) {
   const hasAttachments =
     fileUpload.documents.length > 0 || fileUpload.images.length > 0;
-  const canSend = chat.userInput.trim() !== "" && !chat.isLoading;
+  const canSend =
+    chat.userInput.trim() !== "" && !chat.isLoading && !fileUpload.isUploading;
 
   return (
     <div className="border border-line rounded-md bg-paper max-w-2xl mx-auto w-full">
@@ -36,8 +37,16 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
         <SendButton onClick={chat.handleSend} disabled={!canSend} />
       </div>
 
+      {fileUpload.isUploading && (
+        <p className="text-ink/60 text-xs px-4 pb-2">
+          Uploading and indexing files...
+        </p>
+      )}
+
       {fileUpload.error && (
-        <p className="text-warn text-xs px-4 pb-2">{fileUpload.error}</p>
+        <p className="text-warn text-xs px-4 pb-2 whitespace-pre-line">
+          {fileUpload.error}
+        </p>
       )}
 
       {chat.error && (

@@ -11,6 +11,7 @@ import usePersistentChat from "../hooks/usePersistentChat";
 import useTopicDeletions from "../hooks/useTopicDeletions";
 import useCourseRebuild from "../hooks/useCourseRebuild";
 import useRegenerations from "../hooks/useRegenerations";
+import useCourseFiles from "../hooks/useCourseFiles";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
@@ -41,6 +42,12 @@ function CourseLayout() {
       persistentChat.appendMessage(coursePath, note);
       if (action === "apply") setCourseVersion((version) => version + 1);
     },
+  });
+  const courseFiles = useCourseFiles(courseId, {
+    onRemoved: (file) =>
+      fileUpload.setDocuments((prev) =>
+        prev.filter((doc) => doc.file_uuid !== file.id),
+      ),
   });
   const regenerations = useRegenerations(topicId, courseVersion, {
     onResolved: (note, proposal, action) => {
@@ -77,6 +84,7 @@ function CourseLayout() {
         onToggle={() => setIsChatOpen((prev) => !prev)}
         topicDeletions={topicId ? null : topicDeletions}
         regenerations={topicId ? regenerations : null}
+        courseFiles={courseFiles}
         placeholder={
           topicId
             ? "Ask about the lesson, or ask to regenerate it, add tasks or subtopics..."

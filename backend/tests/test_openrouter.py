@@ -366,3 +366,67 @@ def test_extract_web_sources_keeps_original_titles():
         {"kind": "web", "title": "A [docs]", "url": "https://a.dev"},
         {"kind": "web", "title": "https://b.dev", "url": "https://b.dev"},
     ]
+
+
+def test_get_embeddings_sends_batches_and_keeps_order(monkeypatch):
+    batches = []
+
+    def fake_post(url, payload, timeout):
+        batch = payload["input"]
+        batches.append(len(batch))
+        items = [
+            {"index": i, "embedding": [float(text)]} for i, text in enumerate(batch)
+        ]
+        return {"data": list(reversed(items))}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", fake_post)
+    texts = [str(i) for i in range(250)]
+
+    embeddings = openrouter.get_embeddings(texts)
+
+    assert batches == [100, 100, 50]
+    assert embeddings == [[float(i)] for i in range(250)]
+
+
+def test_get_embeddings_single_text_is_one_request(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        openrouter,
+        "_post_to_openrouter",
+        lambda url, payload, timeout: (
+            calls.append(1),
+            {"data": [{"index": 0, "embedding": [1.0]}]},
+        )[1],
+    )
+
+    assert openrouter.get_embeddings(["q"]) == [[1.0]]
+    assert calls == [1]
+
+
+def test_get_embeddings_rejects_missing_vectors(monkeypatch):
+    monkeypatch.setattr(
+        openrouter,
+        "_post_to_openrouter",
+        lambda url, payload, timeout: {"data": [{"index": 0, "embedding": [1.0]}]},
+    )
+
+    with pytest.raises(openrouter.OpenRouterError, match="wrong number of embeddings"):
+        openrouter.get_embeddings(["a", "b"])
+
+
+def test_topic_map_request_adds_materials_after_the_prompt(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        content = json.dumps({"course_title": "Rust", "topics": []})
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.generate_topic_map("Learn Rust")
+    assert sent["messages"][1]["content"] == "Learn Rust"
+
+    openrouter.generate_topic_map("Learn Rust", "COURSE MATERIALS:\n--- F ---")
+    assert sent["messages"][1]["content"] == (
+        "Learn Rust\n\nCOURSE MATERIALS:\n--- F ---"
+    )

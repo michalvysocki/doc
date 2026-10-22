@@ -1,6 +1,6 @@
 import { FileText, X } from "lucide-react";
 import AttachmentCard from "./AttachmentCard";
-import getFileLabel from "../utils/FileLabel";
+import getFileLabel from "../utils/fileLabel";
 
 function AttachmentList({ documents, images, removeDocument, removeImage }) {
   return (

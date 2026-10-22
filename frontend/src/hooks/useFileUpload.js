@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchJson } from "../utils/api";
+import { MAX_UPLOAD_BYTES } from "../utils/uploadLimits";
 
 const readFile = (file) => {
   return new Promise((resolve, reject) => {
@@ -17,13 +18,32 @@ export default function useFileUpload(courseId) {
   const [documents, setDocuments] = useState([]);
   const [images, setImages] = useState([]);
   const [error, setError] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // A new course starts with no staged attachments.
+  const [stagedFor, setStagedFor] = useState(courseId);
+  if (courseId !== stagedFor) {
+    setStagedFor(courseId);
+    setDocuments([]);
+    setImages([]);
+    setError(null);
+  }
+  const courseIdRef = useRef(courseId);
+  useEffect(() => {
+    courseIdRef.current = courseId;
+  });
 
   async function handleFile(file_data) {
+    const forCourseId = courseId;
     const isImage = file_data.type.startsWith("image/");
+    if (!isImage && file_data.size > MAX_UPLOAD_BYTES) {
+      return `${file_data.name}: the file is too large (max 20 MB)`;
+    }
 
     if (isImage) {
       try {
         const base64data = await readFile(file_data);
+        if (courseIdRef.current !== forCourseId) return null;
 
         const newImage = {
           id: crypto.randomUUID(),
@@ -35,7 +55,7 @@ export default function useFileUpload(courseId) {
         setImages((prev) => [...prev, newImage]);
       } catch (error) {
         console.error("Error while processing image: ", error);
-        setError("Couldn't process file. Try Again.");
+        return `${file_data.name}: couldn't read the image`;
       }
     } else {
       try {
@@ -47,6 +67,7 @@ export default function useFileUpload(courseId) {
           method: "POST",
           body: formData,
         });
+        if (courseIdRef.current !== forCourseId) return null;
 
         const newDocument = {
           file_uuid: data.file_uuid,
@@ -57,31 +78,40 @@ export default function useFileUpload(courseId) {
         setDocuments((prev) => [...prev, newDocument]);
       } catch (error) {
         console.error("Error while indexing file: ", error);
-        setError("Couldn't process file. Try Again.");
+        return `${file_data.name}: ${error.message}`;
       }
     }
+
+    return null;
   }
 
   async function handleUpload() {
-    const files_data = fileInput.current.files;
+    const files_data = [...fileInput.current.files];
+    fileInput.current.value = "";
+    if (files_data.length === 0) return;
 
-    if (files_data.length === 0) {
-      console.error("No file selected");
-      return;
+    setError(null);
+    setIsUploading(true);
+    const errors = [];
+    try {
+      for (const file_data of files_data) {
+        const fileError = await handleFile(file_data);
+        if (fileError) errors.push(fileError);
+      }
+    } finally {
+      setIsUploading(false);
     }
-
-    for (const file_data of files_data) {
-      await handleFile(file_data);
-    }
+    if (errors.length > 0) setError(errors.join("\n"));
   }
 
   async function removeDocument(file_uuid) {
+    setError(null);
     try {
       await fetchJson(`/delete_file/${file_uuid}`, { method: "DELETE" });
       setDocuments((prev) => prev.filter((doc) => doc.file_uuid !== file_uuid));
     } catch (error) {
       console.error("Error while deleting document: ", error);
-      setError("Couldn't process file. Try Again.");
+      setError(`Couldn't remove the file: ${error.message}`);
     }
   }
 
@@ -99,5 +129,6 @@ export default function useFileUpload(courseId) {
     removeDocument,
     removeImage,
     error,
+    isUploading,
   };
 }

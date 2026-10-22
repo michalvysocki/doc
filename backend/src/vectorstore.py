@@ -7,6 +7,19 @@ from .database import SessionLocal
 from .indexing import chunk_text
 from .models import Chunk, Document
 from .openrouter import get_embeddings
+from .schemas import CourseFileOut
+
+MAX_CHUNKS_PER_DOCUMENT = 2000
+
+
+class DocumentTooLargeError(Exception):
+    """Raised when a document would be split into too many chunks."""
+
+    def __init__(self, chunks: int):
+        super().__init__(
+            f"The file has too much text ({chunks} fragments, "
+            f"max {MAX_CHUNKS_PER_DOCUMENT})"
+        )
 
 
 def add_document(
@@ -24,9 +37,15 @@ def add_document(
 
     Returns:
         str: returns document's uuid
+
+    Raises:
+        DocumentTooLargeError: if the text would be split into too many chunks
+        OpenRouterError: if generating embeddings fails
     """
 
     chunks = chunk_text(text)
+    if len(chunks) > MAX_CHUNKS_PER_DOCUMENT:
+        raise DocumentTooLargeError(len(chunks))
     embeddings = get_embeddings(chunks)
 
     document_id = uuid.uuid4()
@@ -102,6 +121,21 @@ def retrieve_chunks(
     ]
 
 
+def list_course_files(course_id: uuid.UUID) -> list[CourseFileOut]:
+    """Returns the files uploaded to a course (not lesson documents), oldest first."""
+
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(Document.id, Document.filename, Document.created_at)
+            .where(Document.course_id == course_id, Document.topic_id.is_(None))
+            .order_by(Document.created_at)
+        ).all()
+    return [
+        CourseFileOut(id=row.id, filename=row.filename, created_at=row.created_at)
+        for row in rows
+    ]
+
+
 def format_fragments(fragments: list[dict[str, Any]]) -> str:
     """Formats retrieved chunks as a labelled section for a model prompt."""
 
@@ -115,18 +149,22 @@ def format_fragments(fragments: list[dict[str, Any]]) -> str:
 
 def delete_document(file_uuid: uuid.UUID) -> bool:
     """
-    Deletes the document with a specified uuid. Its chunks are deleted
-    by the database (ON DELETE CASCADE).
+    Deletes an uploaded file (not a lesson document) with the given uuid.
+    Its chunks are deleted by the database (ON DELETE CASCADE).
 
     Args:
         file_uuid (uuid.UUID): document's unique identifier
 
     Returns:
-        bool: returns True if deleted or False if document is not found
+        bool: True if deleted, False if there is no such uploaded file
     """
 
     with SessionLocal() as session, session.begin():
-        result = session.execute(delete(Document).where(Document.id == file_uuid))
+        result = session.execute(
+            delete(Document).where(
+                Document.id == file_uuid, Document.topic_id.is_(None)
+            )
+        )
 
     return result.rowcount > 0
 

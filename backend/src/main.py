@@ -1,13 +1,9 @@
-import io
-import os
-import tempfile
 import uuid
 from typing import Annotated
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from llama_index.core import SimpleDirectoryReader
-from markitdown import MarkItDown
+from pydantic import ValidationError
 
 from .chat import (
     add_course_note,
@@ -26,6 +22,7 @@ from .course_rebuilds import (
 )
 from .courses import (
     course_exists,
+    create_course_with_files,
     create_explanation,
     delete_course,
     get_course,
@@ -33,6 +30,12 @@ from .courses import (
     list_courses,
     save_course,
     topic_exists,
+)
+from .file_parsing import (
+    FileParsingError,
+    FileTooLargeError,
+    extract_text,
+    read_upload,
 )
 from .openrouter import OpenRouterError, generate_topic_map
 from .regenerations import (
@@ -46,6 +49,7 @@ from .schemas import (
     ChatMessageOut,
     ChatReply,
     CourseCreate,
+    CourseFileOut,
     CourseOut,
     CourseRebuildOut,
     CourseSummary,
@@ -68,7 +72,12 @@ from .topic_deletions import (
     confirm_topic_deletion,
     list_topic_deletions,
 )
-from .vectorstore import add_document, delete_document
+from .vectorstore import (
+    DocumentTooLargeError,
+    add_document,
+    delete_document,
+    list_course_files,
+)
 
 app = FastAPI()
 
@@ -82,69 +91,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-md = MarkItDown()
-
 
 @app.post("/parse_file")
 def parse_file(file: UploadFile, course_id: Annotated[uuid.UUID, Form()]):
-    if file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Image uploading is not supported")
-
     if not course_exists(course_id):
         raise HTTPException(status_code=404, detail="Course not found")
 
-    file_bytes = file.file.read()
-    binary_stream = io.BytesIO(file_bytes)
-
-    _, extension = os.path.splitext(file.filename)
-    extension = extension.lower()
-
-    text_content = ""
-
     try:
-        if file.content_type == "application/pdf" or extension == ".pdf":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(file_bytes)
-                tmp_path = tmp_file.name
-
-            try:
-                documents = SimpleDirectoryReader(input_files=[tmp_path]).load_data()
-
-                text_content = "\n".join([doc.text for doc in documents])
-
-            finally:
-                os.remove(tmp_path)
-
-        elif file.content_type.startswith(
-            "application/vnd.openxmlformats-officedocument"
-        ) or extension in [".docx", ".xlsx", ".pptx"]:
-            result = md.convert_stream(binary_stream, file_extension=extension)
-            text_content = result.text_content
-
-        elif file.content_type.startswith("text/") or extension in [
-            ".md",
-            ".txt",
-            ".html",
-            ".csv",
-            ".json",
-        ]:
-            text_content = file_bytes.decode()
-
-        else:
-            raise ValueError(f"Unsupported file extension: {extension}")
-
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Wrong file type")
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Failed to parse file: {e!s}")
-
-    if not text_content or text_content.strip() == "":
-        raise HTTPException(
-            status_code=400, detail="Empty file or no readable text found"
-        )
+        text_content = extract_text(file.filename, file.content_type, read_upload(file))
+    except FileTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e)) from e
+    except FileParsingError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     try:
         file_uuid = add_document(text_content, file.filename, course_id)
+    except DocumentTooLargeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -164,16 +127,52 @@ def read_courses():
     return list_courses()
 
 
+MAX_FILES_PER_COURSE = 10
+
+
 @app.post("/courses", status_code=201, response_model=CourseOut)
-def create_course(request: CourseCreate):
+def create_course(
+    initial_prompt: Annotated[str, Form()],
+    files: Annotated[list[UploadFile] | None, File()] = None,
+):
     try:
-        topic_map, sources = generate_topic_map(request.initial_prompt)
+        request = CourseCreate(initial_prompt=initial_prompt)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
+    files = files or []
+    if len(files) > MAX_FILES_PER_COURSE:
+        raise HTTPException(
+            status_code=400, detail=f"At most {MAX_FILES_PER_COURSE} files per course"
+        )
+
+    texts = []
+    for file in files:
+        try:
+            text = extract_text(file.filename, file.content_type, read_upload(file))
+        except FileParsingError as e:
+            raise HTTPException(status_code=400, detail=f"{file.filename}: {e}") from e
+        texts.append((file.filename, text))
+
+    try:
+        if texts:
+            course_id = create_course_with_files(request.initial_prompt, texts)
+        else:
+            topic_map, sources = generate_topic_map(request.initial_prompt)
+            course_id = save_course(request.initial_prompt, topic_map, sources)
+    except DocumentTooLargeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
-    course_id = save_course(request.initial_prompt, topic_map, sources)
-
     return get_course(course_id)
+
+
+@app.get("/courses/{course_id}/files", response_model=list[CourseFileOut])
+def read_course_files(course_id: uuid.UUID):
+    if not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return list_course_files(course_id)
 
 
 @app.get("/courses/{course_id}", response_model=CourseOut)
