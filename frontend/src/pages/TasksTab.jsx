@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router";
-import { RefreshCw } from "lucide-react";
 import useTasks from "../hooks/useTasks";
+import RegenerateForm from "../components/RegenerateForm";
 import TaskCard from "../components/TaskCard";
 
 function TasksTab() {
@@ -15,13 +15,6 @@ function TasksTab() {
     submitAttempt,
     regradeAttempt,
   } = useTasks(topic.id, hasLesson, courseVersion);
-
-  function handleRegenerate() {
-    const confirmed = window.confirm(
-      "Regenerate tasks? The current tasks and your attempts will be archived.",
-    );
-    if (confirmed) regenerate();
-  }
 
   if (!hasLesson) {
     return (
@@ -50,22 +43,17 @@ function TasksTab() {
 
   return (
     <section>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-ink/60">
           {solvedCount} / {tasks.length} solved
         </p>
-        <button
-          type="button"
-          onClick={handleRegenerate}
-          disabled={isRegenerating}
-          className="inline-flex items-center gap-1 rounded-md border border-line px-3 py-1.5 text-sm text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <RefreshCw
-            size={14}
-            className={isRegenerating ? "animate-spin" : ""}
-          />
-          {isRegenerating ? "Regenerating..." : "Regenerate tasks"}
-        </button>
+        <RegenerateForm
+          key={topic.id}
+          label="Regenerate tasks"
+          confirmMessage="Regenerate tasks? The current tasks and your attempts will be archived."
+          isRegenerating={isRegenerating}
+          regenerate={regenerate}
+        />
       </div>
 
       {error && <p className="text-sm text-warn mt-2">{error}</p>}

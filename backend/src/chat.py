@@ -28,7 +28,7 @@ from .schemas import (
     TopicOut,
 )
 from .tasks import get_tasks
-from .vectorstore import get_course_document_ids, retrieve_chunks
+from .vectorstore import format_fragments, get_course_document_ids, retrieve_chunks
 
 HISTORY_LIMIT = 20
 MAX_TOOL_ROUNDS = 3
@@ -251,15 +251,6 @@ def format_tasks_for_chat(tasks: list[TaskOut]) -> str:
     return "\n".join(lines)
 
 
-def _fragments_section(fragments: list[dict]) -> str:
-    texts = []
-    for fragment in fragments:
-        source = "lesson" if fragment["metadata"].get("is_lesson") else "document"
-        name = fragment["metadata"]["filename"]
-        texts.append(f"--- Fragment of the {source}: {name} ---\n{fragment['text']}")
-    return "COURSE MATERIALS:\n" + "\n\n".join(texts)
-
-
 def _history_messages(history: list[ChatMessageOut]) -> list[dict]:
     messages = []
     for message in history[-HISTORY_LIMIT:]:
@@ -297,7 +288,7 @@ def build_topic_chat_messages(
         + (subtopics or "(none)"),
     ]
     if fragments:
-        sections.append(_fragments_section(fragments))
+        sections.append(format_fragments(fragments))
     if tasks:
         sections.append(f"PRACTICE TASKS:\n{format_tasks_for_chat(tasks)}")
 
@@ -328,7 +319,7 @@ def build_course_chat_messages(
         f"COURSE OUTLINE:\n{outline}",
     ]
     if fragments:
-        sections.append(_fragments_section(fragments))
+        sections.append(format_fragments(fragments))
 
     return [
         {"role": "system", "content": "\n\n".join(sections)},

@@ -73,25 +73,31 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
     };
   }, [topicId, refreshKey]);
 
-  async function regenerate() {
+  async function regenerate(options = {}) {
     const forTopicId = topicId;
     setIsRegenerating(true);
 
     try {
       const tasks = await fetchJson(
         `/topics/${forTopicId}/tasks?regenerate=true`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(options),
+        },
       );
       setResult((prev) =>
         prev.topicId === forTopicId
           ? { topicId: forTopicId, status: "ready", tasks, error: null }
           : prev,
       );
+      return true;
     } catch (error) {
       console.error("Error while regenerating tasks: ", error);
       setResult((prev) =>
         prev.topicId === forTopicId ? { ...prev, error: error.message } : prev,
       );
+      return false;
     } finally {
       setIsRegenerating(false);
     }

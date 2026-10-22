@@ -87,3 +87,82 @@ def test_task_grade_accepts_only_known_verdicts():
         TaskGrade.model_validate_json(
             '{"verdict": "correct", "feedback": "Good", "score": 90}'
         )
+
+
+def capture_explanation_request(monkeypatch, **options) -> str:
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": "Lesson"}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.generate_topic_explanation(
+        course_title="Rust",
+        path=["Basics"],
+        title="Borrowing",
+        description="References",
+        subtopics=[],
+        **options,
+    )
+    return sent["messages"][1]["content"]
+
+
+def test_explanation_request_without_extras_is_unchanged(monkeypatch):
+    content = capture_explanation_request(monkeypatch)
+
+    assert content == (
+        "Course: Rust\n"
+        "Topic path: Basics > Borrowing\n"
+        "Topic: Borrowing\n"
+        "Topic description: References"
+    )
+
+
+def test_explanation_request_ends_with_materials_and_instructions(monkeypatch):
+    content = capture_explanation_request(
+        monkeypatch,
+        instructions="More examples",
+        materials="COURSE MATERIALS:\n--- Fragment ---",
+    )
+
+    assert content.endswith(
+        "Topic description: References\n"
+        "\nCOURSE MATERIALS:\n--- Fragment ---\n"
+        "\nLEARNER'S INSTRUCTIONS:\nMore examples"
+    )
+
+
+def capture_tasks_request(monkeypatch, **options) -> str:
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        content = json.dumps({"tasks": [{"question": "Q", "grading_notes": "N"}]})
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.generate_tasks(
+        course_title="Rust",
+        path=["Basics"],
+        title="Borrowing",
+        lesson="Text",
+        **options,
+    )
+    return sent["messages"][1]["content"]
+
+
+def test_tasks_request_without_extras_is_unchanged(monkeypatch):
+    content = capture_tasks_request(monkeypatch)
+
+    assert content == "Course: Rust\nTopic path: Basics > Borrowing\n\nLESSON:\nText"
+
+
+def test_tasks_request_ends_with_materials_and_instructions(monkeypatch):
+    content = capture_tasks_request(
+        monkeypatch, instructions="Harder", materials="COURSE MATERIALS:\n--- F ---"
+    )
+
+    assert content.endswith(
+        "LESSON:\nText\n\nCOURSE MATERIALS:\n--- F ---\n\nLEARNER'S INSTRUCTIONS:\nHarder"
+    )

@@ -147,6 +147,13 @@ class MoveTopicArgs(BaseModel):
     )
 
 
+class GenerationOptions(BaseModel):
+    instructions: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None
+    ) = None
+    use_files: bool = False
+
+
 class TopicDeletionOut(BaseModel):
     id: uuid.UUID
     topic_id: uuid.UUID

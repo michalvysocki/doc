@@ -19,7 +19,12 @@ from .schemas import (
     TopicNode,
     TopicOut,
 )
-from .vectorstore import add_document
+from .vectorstore import (
+    add_document,
+    format_fragments,
+    get_course_document_ids,
+    retrieve_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -415,12 +420,30 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
         )
 
 
+def get_file_materials(course_id: uuid.UUID, query: str) -> str | None:
+    """
+    Returns fragments of the course's uploaded files relevant to the query,
+    formatted for a prompt, or None if the course has no matching files.
+    """
+
+    fragments = retrieve_chunks(
+        query=query,
+        file_uuids=get_course_document_ids(course_id, files_only=True),
+    )
+    return format_fragments(fragments) if fragments else None
+
+
 def create_explanation(
-    topic_id: uuid.UUID, regenerate: bool = False
+    topic_id: uuid.UUID,
+    regenerate: bool = False,
+    instructions: str | None = None,
+    use_files: bool = False,
 ) -> TopicDetail | None:
     """
     Generates and saves an explanation for a topic. Without regenerate returns
     the existing explanation if there is one. With regenerate replaces it.
+    Optionally follows the learner's instructions and uses fragments of the
+    course's uploaded files.
 
     Returns:
         TopicDetail | None: the topic with explanation, or None if it does not exist
@@ -432,12 +455,20 @@ def create_explanation(
     if topic.explanation is not None and not regenerate:
         return topic
 
+    materials = (
+        get_file_materials(topic.course_id, f"{topic.title}\n{topic.description}")
+        if use_files
+        else None
+    )
+
     explanation = generate_topic_explanation(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
         title=topic.title,
         description=topic.description,
         subtopics=[link.title for link in topic.subtopics],
+        instructions=instructions,
+        materials=materials,
     )
 
     with SessionLocal() as session, session.begin():

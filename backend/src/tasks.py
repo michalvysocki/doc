@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from sqlalchemy import func, select, update
 
-from .courses import get_topic
+from .courses import get_file_materials, get_topic
 from .database import SessionLocal
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_tasks, grade_answer
@@ -57,10 +57,17 @@ def get_tasks(topic_id: uuid.UUID) -> list[TaskOut]:
         ]
 
 
-def create_tasks(topic_id: uuid.UUID, regenerate: bool = False) -> list[TaskOut] | None:
+def create_tasks(
+    topic_id: uuid.UUID,
+    regenerate: bool = False,
+    instructions: str | None = None,
+    use_files: bool = False,
+) -> list[TaskOut] | None:
     """
     Generates tasks for a topic. Without regenerate returns the existing active
     tasks if there are any. With regenerate archives the current tasks first.
+    Optionally follows the learner's instructions and uses fragments of the
+    course's uploaded files.
 
     Returns:
         list[TaskOut] | None: active tasks, or None if the topic does not exist
@@ -81,11 +88,18 @@ def create_tasks(topic_id: uuid.UUID, regenerate: bool = False) -> list[TaskOut]
         if existing:
             return existing
 
+    materials = (
+        get_file_materials(topic.course_id, f"{topic.title}\n{topic.description}")
+        if use_files
+        else None
+    )
     generated = generate_tasks(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
         title=topic.title,
         lesson=topic.explanation,
+        instructions=instructions,
+        materials=materials,
     )
 
     with SessionLocal() as session, session.begin():

@@ -35,6 +35,7 @@ from .schemas import (
     CourseCreate,
     CourseOut,
     CourseSummary,
+    GenerationOptions,
     MessageCreate,
     TaskOut,
     TopicDeletionOut,
@@ -187,9 +188,16 @@ def read_topic(topic_id: uuid.UUID):
 
 
 @app.post("/topics/{topic_id}/explanation", response_model=TopicDetail)
-def post_topic_explanation(topic_id: uuid.UUID, regenerate: bool = False):
+def post_topic_explanation(
+    topic_id: uuid.UUID,
+    regenerate: bool = False,
+    request: GenerationOptions | None = None,
+):
+    options = request or GenerationOptions()
     try:
-        topic = create_explanation(topic_id, regenerate)
+        topic = create_explanation(
+            topic_id, regenerate, options.instructions or None, options.use_files
+        )
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -231,9 +239,16 @@ def read_tasks(topic_id: uuid.UUID):
 
 
 @app.post("/topics/{topic_id}/tasks", response_model=list[TaskOut])
-def post_tasks(topic_id: uuid.UUID, regenerate: bool = False):
+def post_tasks(
+    topic_id: uuid.UUID,
+    regenerate: bool = False,
+    request: GenerationOptions | None = None,
+):
+    options = request or GenerationOptions()
     try:
-        tasks = create_tasks(topic_id, regenerate)
+        tasks = create_tasks(
+            topic_id, regenerate, options.instructions or None, options.use_files
+        )
     except LessonMissingError as e:
         raise HTTPException(
             status_code=409, detail="The lesson has not been generated yet"

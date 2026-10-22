@@ -102,6 +102,17 @@ def retrieve_chunks(
     ]
 
 
+def format_fragments(fragments: list[dict[str, Any]]) -> str:
+    """Formats retrieved chunks as a labelled section for a model prompt."""
+
+    texts = []
+    for fragment in fragments:
+        source = "lesson" if fragment["metadata"].get("is_lesson") else "document"
+        name = fragment["metadata"]["filename"]
+        texts.append(f"--- Fragment of the {source}: {name} ---\n{fragment['text']}")
+    return "COURSE MATERIALS:\n" + "\n\n".join(texts)
+
+
 def delete_document(file_uuid: uuid.UUID) -> bool:
     """
     Deletes the document with a specified uuid. Its chunks are deleted
@@ -121,11 +132,13 @@ def delete_document(file_uuid: uuid.UUID) -> bool:
 
 
 def get_course_document_ids(
-    course_id: uuid.UUID, exclude_topic_id: uuid.UUID | None = None
+    course_id: uuid.UUID,
+    exclude_topic_id: uuid.UUID | None = None,
+    files_only: bool = False,
 ) -> list[uuid.UUID]:
     """
-    Returns ids of all documents (uploaded files and lessons) of the course,
-    optionally without the lesson of one topic.
+    Returns ids of documents of the course: uploaded files and lessons, or only
+    uploaded files. Optionally without the lesson of one topic.
     """
 
     condition = Document.course_id == course_id
@@ -133,6 +146,8 @@ def get_course_document_ids(
         condition = and_(
             condition, Document.topic_id.is_distinct_from(exclude_topic_id)
         )
+    if files_only:
+        condition = and_(condition, Document.topic_id.is_(None))
 
     with SessionLocal() as session:
         return list(session.scalars(select(Document.id).where(condition)))

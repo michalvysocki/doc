@@ -34,7 +34,9 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "fenced code blocks. Aim for 500-1000 words. If the topic has subtopics, "
     "give only an overview of them, because each subtopic has its own lesson. "
     "Do not start with a heading that repeats the topic title. Write in the "
-    "same language as the topic title."
+    "same language as the topic title. If course materials are given, base the "
+    "lesson on them where they are relevant and stay consistent with them. If the "
+    "learner gives instructions, follow them."
 )
 
 TOPIC_CHAT_SYSTEM_PROMPT = (
@@ -89,7 +91,10 @@ TASKS_SYSTEM_PROMPT = (
     "include practical exercises, such as writing or analysing code. For each task "
     "write grading notes listing the key points a correct answer must contain; the "
     "learner never sees them. Write the questions in Markdown. Write in the same "
-    "language as the lesson."
+    "language as the lesson. If course materials are given, use them as "
+    "inspiration for the style, topics and difficulty of the tasks, but keep the "
+    "tasks answerable from the lesson. If the learner gives instructions, follow "
+    "them."
 )
 
 GRADING_SYSTEM_PROMPT = (
@@ -242,12 +247,24 @@ def generate_topic_map(initial_prompt: str) -> TopicMap:
     )
 
 
+def _with_extras(text: str, instructions: str | None, materials: str | None) -> str:
+    """Appends course materials and the learner's instructions (last) to a prompt."""
+
+    if materials:
+        text += f"\n\n{materials}"
+    if instructions:
+        text += f"\n\nLEARNER'S INSTRUCTIONS:\n{instructions}"
+    return text
+
+
 def generate_topic_explanation(
     course_title: str,
     path: list[str],
     title: str,
     description: str,
     subtopics: list[str],
+    instructions: str | None = None,
+    materials: str | None = None,
 ) -> str:
     context_lines = [
         f"Course: {course_title}",
@@ -266,7 +283,12 @@ def generate_topic_explanation(
             "model": MODEL,
             "messages": [
                 {"role": "system", "content": TOPIC_EXPLANATION_SYSTEM_PROMPT},
-                {"role": "user", "content": "\n".join(context_lines)},
+                {
+                    "role": "user",
+                    "content": _with_extras(
+                        "\n".join(context_lines), instructions, materials
+                    ),
+                },
             ],
         },
         timeout=180,
@@ -284,12 +306,19 @@ def generate_topic_explanation(
 
 
 def generate_tasks(
-    course_title: str, path: list[str], title: str, lesson: str
+    course_title: str,
+    path: list[str],
+    title: str,
+    lesson: str,
+    instructions: str | None = None,
+    materials: str | None = None,
 ) -> GeneratedTaskSet:
-    context = (
+    context = _with_extras(
         f"Course: {course_title}\n"
         f"Topic path: {' > '.join([*path, title])}\n\n"
-        f"LESSON:\n{lesson}"
+        f"LESSON:\n{lesson}",
+        instructions,
+        materials,
     )
     return _structured_query(
         [
