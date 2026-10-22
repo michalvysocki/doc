@@ -9,6 +9,7 @@ import {
 import useCourse from "../hooks/useCourse";
 import usePersistentChat from "../hooks/usePersistentChat";
 import useTopicDeletions from "../hooks/useTopicDeletions";
+import useCourseRebuild from "../hooks/useCourseRebuild";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
@@ -34,6 +35,12 @@ function CourseLayout() {
       if (action === "confirm") setCourseVersion((version) => version + 1);
     },
   });
+  const courseRebuild = useCourseRebuild(courseId, courseVersion, {
+    onResolved: (note, action) => {
+      persistentChat.appendMessage(coursePath, note);
+      if (action === "apply") setCourseVersion((version) => version + 1);
+    },
+  });
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -48,7 +55,7 @@ function CourseLayout() {
         ) : course === null ? (
           <p className="text-sm text-ink/60">Loading course...</p>
         ) : (
-          <Outlet context={{ course, courseVersion }} />
+          <Outlet context={{ course, courseVersion, courseRebuild }} />
         )}
       </main>
 

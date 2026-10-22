@@ -166,3 +166,29 @@ def test_tasks_request_ends_with_materials_and_instructions(monkeypatch):
     assert content.endswith(
         "LESSON:\nText\n\nCOURSE MATERIALS:\n--- F ---\n\nLEARNER'S INSTRUCTIONS:\nHarder"
     )
+
+
+def test_rebuild_request_has_goal_outline_materials_and_instructions(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": json.dumps({"topics": []})}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.generate_rebuild_plan(
+        course_title="Rust",
+        initial_prompt="Learn Rust",
+        outline="- Basics (id: 1)",
+        instructions="More async",
+        materials="COURSE MATERIALS:\n--- F ---",
+    )
+
+    assert sent["messages"][1]["content"] == (
+        "Course: Rust\n"
+        "Course goal (the learner's original request): Learn Rust\n\n"
+        "CURRENT OUTLINE:\n- Basics (id: 1)\n\n"
+        "COURSE MATERIALS:\n--- F ---\n\n"
+        "LEARNER'S INSTRUCTIONS:\nMore async"
+    )
+    assert sent["response_format"]["json_schema"]["name"] == "rebuild_plan"

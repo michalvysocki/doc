@@ -2,12 +2,16 @@ import uuid
 
 from pydantic import ValidationError
 
+from .course_rebuilds import RebuildError, get_course_rebuild, propose_course_rebuild
 from .courses import FIRST, TopicPlacementError, add_topics, move_topic, rename_topic
+from .openrouter import OpenRouterError
 from .schemas import (
     AddSubtopicsArgs,
     AddTasksArgs,
     AddTopicsArgs,
+    CourseRebuildOut,
     MoveTopicArgs,
+    ProposeCourseRebuildArgs,
     ProposeTopicDeletionArgs,
     RenameTopicArgs,
 )
@@ -61,12 +65,27 @@ PROPOSE_TOPIC_DELETION_TOOL = {
     },
 }
 
+PROPOSE_COURSE_REBUILD_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_course_rebuild",
+        "description": (
+            "Generate a new map of the whole course as a proposal. Changes nothing: "
+            "the learner sees a preview and applies or discards it with buttons."
+        ),
+        "parameters": ProposeCourseRebuildArgs.model_json_schema(),
+    },
+}
+
 COURSE_TOOLS = [
     ADD_TOPICS_TOOL,
     RENAME_TOPIC_TOOL,
     MOVE_TOPIC_TOOL,
     PROPOSE_TOPIC_DELETION_TOOL,
+    PROPOSE_COURSE_REBUILD_TOOL,
 ]
+
+MAX_TITLES_IN_SUMMARY = 10
 
 ADD_SUBTOPICS_TOOL = {
     "type": "function",
@@ -94,6 +113,19 @@ TOPIC_TOOLS = [ADD_SUBTOPICS_TOOL, ADD_TASKS_TOOL]
 
 def _parse_id(value: str | None) -> uuid.UUID | None:
     return uuid.UUID(value) if value else None
+
+
+def _rebuild_summary(rebuild: CourseRebuildOut) -> str:
+    deleted = [topic.title for topic in rebuild.deleted][:MAX_TITLES_IN_SUMMARY]
+    summary = (
+        "Course rebuild proposed; nothing is changed yet. The learner sees a "
+        "preview above the map and applies or discards it with buttons. It would "
+        f"keep {rebuild.kept_count} topics, add {rebuild.new_count} and delete "
+        f"{len(rebuild.deleted)}."
+    )
+    if deleted:
+        summary += f" Deleted topics include: {', '.join(deleted)}."
+    return summary
 
 
 def run_course_tool(
@@ -152,6 +184,18 @@ def run_course_tool(
                 f"{deletion.attempts} attempts."
             )
             return summary, True
+        if name == "propose_course_rebuild":
+            args = ProposeCourseRebuildArgs.model_validate_json(arguments)
+            try:
+                propose_course_rebuild(
+                    course_id, args.instructions or None, args.use_files
+                )
+            except (OpenRouterError, RebuildError) as e:
+                return f"Error: generating the new course map failed: {e}", False
+            rebuild = get_course_rebuild(course_id)
+            if rebuild is None:
+                return "Error: course not found", False
+            return _rebuild_summary(rebuild), True
     except ValidationError as e:
         return f"Error: invalid arguments: {e}", False
     except (ValueError, TopicPlacementError) as e:

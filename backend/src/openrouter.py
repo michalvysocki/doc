@@ -7,7 +7,7 @@ import requests
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
-from .schemas import GeneratedTaskSet, TaskGrade, TopicMap
+from .schemas import GeneratedTaskSet, RebuildPlan, TaskGrade, TopicMap
 
 current_dir = Path(__file__).resolve().parent
 load_dotenv(current_dir.parent / ".env")
@@ -25,6 +25,18 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "specific enough to study in a single session. Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
     "request."
+)
+
+REBUILD_SYSTEM_PROMPT = (
+    "You are an expert teacher redesigning an existing course. Create the complete "
+    "new map of topics, ordered from the basics to advanced topics, at most 3 "
+    "levels deep, each topic specific enough to study in a single session. For "
+    "every topic that covers the same content as an existing topic, set "
+    "existing_topic_id to that topic's id from the current outline, so its lesson, "
+    "tasks and progress are kept; you may change its title, description and place. "
+    "Prefer keeping topics with progress. Use each id at most once and null for "
+    "new topics. Existing topics you leave out will be deleted. Do not number the "
+    "titles. Write in the language of the course."
 )
 
 TOPIC_EXPLANATION_SYSTEM_PROMPT = (
@@ -79,7 +91,13 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     "use the propose_topic_deletion tool: it deletes nothing, it shows the learner "
     "a card with what would be lost and buttons to confirm or cancel. Tell the "
     "learner to decide with the buttons. Never say a topic was deleted unless you "
-    'see a "[Deleted topic: ...]" note in the conversation. Answer in the language '
+    'see a "[Deleted topic: ...]" note in the conversation. When the learner asks '
+    "to rebuild or redesign the whole course, for example based on uploaded "
+    "materials, use the propose_course_rebuild tool with their instructions; set "
+    "use_files to true when they mention their files or materials. It changes "
+    "nothing: the learner sees a preview and applies or discards it. For small "
+    "changes prefer the other tools. Never say the course was rebuilt unless you "
+    'see a "[Rebuilt course: ...]" note in the conversation. Answer in the language '
     "of the learner's last message and use Markdown."
 )
 
@@ -328,6 +346,31 @@ def generate_tasks(
         GeneratedTaskSet,
         name="task_set",
         timeout=180,
+    )
+
+
+def generate_rebuild_plan(
+    course_title: str,
+    initial_prompt: str,
+    outline: str,
+    instructions: str | None = None,
+    materials: str | None = None,
+) -> RebuildPlan:
+    context = _with_extras(
+        f"Course: {course_title}\n"
+        f"Course goal (the learner's original request): {initial_prompt}\n\n"
+        f"CURRENT OUTLINE:\n{outline}",
+        instructions,
+        materials,
+    )
+    return _structured_query(
+        [
+            {"role": "system", "content": REBUILD_SYSTEM_PROMPT},
+            {"role": "user", "content": context},
+        ],
+        RebuildPlan,
+        name="rebuild_plan",
+        timeout=240,
     )
 
 

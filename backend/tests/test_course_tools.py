@@ -4,9 +4,16 @@ import uuid
 import pytest
 
 from src import chat, course_tools
+from src.course_rebuilds import RebuildError
 from src.courses import TopicPlacementError, _flatten_topics
 from src.openrouter import OpenRouterError
-from src.schemas import TopicDeletionOut, TopicNode, TopicOut
+from src.schemas import (
+    CourseRebuildOut,
+    RebuildDeletedTopic,
+    TopicDeletionOut,
+    TopicNode,
+    TopicOut,
+)
 
 
 def tool_call(call_id: str, arguments: dict) -> dict:
@@ -405,3 +412,82 @@ def test_run_course_tool_reports_deletion_outside_course(monkeypatch):
     )
 
     assert result == ("Error: topic not found in this course", False)
+
+
+def rebuild_out(deleted_titles: list[str]) -> CourseRebuildOut:
+    return CourseRebuildOut(
+        id=uuid.uuid4(),
+        topics=[],
+        deleted=[
+            RebuildDeletedTopic(
+                topic_id=uuid.uuid4(),
+                title=title,
+                has_explanation=False,
+                tasks=0,
+                attempts=0,
+            )
+            for title in deleted_titles
+        ],
+        kept_count=4,
+        new_count=2,
+    )
+
+
+def rebuild_arguments(instructions: str | None = "More async") -> str:
+    return json.dumps({"instructions": instructions, "use_files": True})
+
+
+def test_run_course_tool_proposes_rebuild(monkeypatch):
+    received = {}
+
+    def fake_propose(course_id, instructions, use_files):
+        received.update(instructions=instructions, use_files=use_files)
+        return uuid.uuid4()
+
+    monkeypatch.setattr(course_tools, "propose_course_rebuild", fake_propose)
+    monkeypatch.setattr(
+        course_tools, "get_course_rebuild", lambda course_id: rebuild_out(["Old"])
+    )
+
+    result, changed = course_tools.run_course_tool(
+        uuid.uuid4(), "propose_course_rebuild", rebuild_arguments()
+    )
+
+    assert result.startswith("Course rebuild proposed; nothing is changed yet.")
+    assert "keep 4 topics, add 2 and delete 1. Deleted topics include: Old." in result
+    assert changed is True
+    assert received == {"instructions": "More async", "use_files": True}
+
+
+def test_rebuild_summary_lists_at_most_ten_deleted_titles():
+    summary = course_tools._rebuild_summary(rebuild_out([f"T{i}" for i in range(12)]))
+
+    assert "delete 12." in summary
+    assert "T9." in summary
+    assert "T10" not in summary
+
+
+@pytest.mark.parametrize(
+    "error", [OpenRouterError("timeout"), RebuildError("the plan has no topics")]
+)
+def test_run_course_tool_reports_rebuild_failure(monkeypatch, error):
+    def fail(*args):
+        raise error
+
+    monkeypatch.setattr(course_tools, "propose_course_rebuild", fail)
+
+    result, changed = course_tools.run_course_tool(
+        uuid.uuid4(), "propose_course_rebuild", rebuild_arguments()
+    )
+
+    assert result == f"Error: generating the new course map failed: {error}"
+    assert changed is False
+
+
+def test_run_course_tool_rejects_too_long_rebuild_instructions():
+    result, changed = course_tools.run_course_tool(
+        uuid.uuid4(), "propose_course_rebuild", rebuild_arguments("x" * 2001)
+    )
+
+    assert result.startswith("Error: invalid arguments")
+    assert changed is False

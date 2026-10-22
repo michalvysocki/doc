@@ -16,6 +16,13 @@ from .chat import (
     send_course_message,
     send_topic_message,
 )
+from .course_rebuilds import (
+    RebuildError,
+    apply_course_rebuild,
+    discard_course_rebuild,
+    get_course_rebuild,
+    propose_course_rebuild,
+)
 from .courses import (
     course_exists,
     create_explanation,
@@ -34,6 +41,7 @@ from .schemas import (
     ChatReply,
     CourseCreate,
     CourseOut,
+    CourseRebuildOut,
     CourseSummary,
     GenerationOptions,
     MessageCreate,
@@ -337,3 +345,53 @@ def post_cancel_topic_deletion(deletion_id: uuid.UUID):
 
     course_id, title = result
     return add_course_note(course_id, f"[Cancelled deletion of topic: {title}]")
+
+
+@app.get("/courses/{course_id}/rebuild", response_model=CourseRebuildOut | None)
+def read_course_rebuild(course_id: uuid.UUID):
+    if not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return get_course_rebuild(course_id)
+
+
+@app.post("/course-rebuilds/{rebuild_id}/apply", response_model=ChatMessageOut)
+def post_apply_course_rebuild(rebuild_id: uuid.UUID):
+    result = apply_course_rebuild(rebuild_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Course rebuild not found")
+
+    return add_course_note(
+        result.course_id,
+        f"[Rebuilt course: kept {result.kept}, added {result.added}, "
+        f"deleted {result.deleted} topics]",
+    )
+
+
+@app.post("/course-rebuilds/{rebuild_id}/discard", response_model=ChatMessageOut)
+def post_discard_course_rebuild(rebuild_id: uuid.UUID):
+    course_id = discard_course_rebuild(rebuild_id)
+    if course_id is None:
+        raise HTTPException(status_code=404, detail="Course rebuild not found")
+
+    return add_course_note(course_id, "[Discarded course rebuild]")
+
+
+@app.post("/courses/{course_id}/rebuild", response_model=CourseRebuildOut)
+def post_course_rebuild(course_id: uuid.UUID, request: GenerationOptions | None = None):
+    options = request or GenerationOptions()
+    try:
+        rebuild_id = propose_course_rebuild(
+            course_id, options.instructions or None, options.use_files
+        )
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except RebuildError as e:
+        raise HTTPException(
+            status_code=502, detail=f"The generated plan cannot be used: {e}"
+        ) from e
+
+    if rebuild_id is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return get_course_rebuild(course_id)

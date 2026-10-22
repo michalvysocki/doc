@@ -17,6 +17,30 @@ class TopicNode(BaseModel):
     )
 
 
+class RebuildTopicNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    existing_topic_id: str | None = Field(
+        description=(
+            "Id of the existing topic (from the outline) that this topic keeps, "
+            "or null for a new topic"
+        )
+    )
+    title: str = Field(description="Short topic name")
+    description: str = Field(
+        description="One or two sentences about what the topic covers"
+    )
+    children: list["RebuildTopicNode"] = Field(
+        description="Subtopics; empty list for leaf topics"
+    )
+
+
+class RebuildPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topics: list[RebuildTopicNode] = Field(description="Top-level topics in order")
+
+
 class TopicMap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -152,6 +176,44 @@ class GenerationOptions(BaseModel):
         Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None
     ) = None
     use_files: bool = False
+
+
+class RebuildPreviewNode(BaseModel):
+    topic_id: uuid.UUID | None  # None = new topic
+    title: str
+    description: str
+    old_title: str | None  # set when a kept topic gets a new title
+    has_explanation: bool
+    tasks_total: int
+    tasks_solved: int
+    children: list["RebuildPreviewNode"]
+
+
+class RebuildDeletedTopic(BaseModel):
+    topic_id: uuid.UUID
+    title: str
+    has_explanation: bool
+    tasks: int
+    attempts: int
+
+
+class CourseRebuildOut(BaseModel):
+    id: uuid.UUID
+    topics: list[RebuildPreviewNode]
+    deleted: list[RebuildDeletedTopic]
+    kept_count: int
+    new_count: int
+
+
+class ProposeCourseRebuildArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instructions: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None
+    ) = Field(description="What the learner wants changed, in their own words")
+    use_files: bool = Field(
+        description="True if the new map should be based on the uploaded course files"
+    )
 
 
 class TopicDeletionOut(BaseModel):
