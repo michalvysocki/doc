@@ -4,11 +4,19 @@ function AttachmentCard({ name, typeLabel, thumbnail, onRemove }) {
   return (
     <div className="flex items-center gap-2 bg-paper border border-line rounded-md px-3 py-2 shrink-0 max-w-45">
       {thumbnail ? (
-        <img
-          src={thumbnail}
-          alt={name}
-          className="w-8 h-8 object-cover rounded-sm shrink-0"
-        />
+        <a
+          href={thumbnail}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open full size"
+          className="shrink-0"
+        >
+          <img
+            src={thumbnail}
+            alt={name}
+            className="w-8 h-8 object-cover rounded-sm"
+          />
+        </a>
       ) : (
         <FileText size={16} className="text-accent shrink-0" />
       )}

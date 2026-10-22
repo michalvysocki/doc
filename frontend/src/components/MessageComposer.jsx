@@ -8,6 +8,12 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
   const canSend =
     chat.userInput.trim() !== "" && !chat.isLoading && !fileUpload.isUploading;
 
+  function handleKeyDown(event) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (canSend) chat.handleSend();
+  }
+
   return (
     <div className="border border-line rounded-md bg-paper max-w-2xl mx-auto w-full">
       {hasAttachments && (
@@ -20,6 +26,7 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
       <input
         value={chat.userInput}
         onChange={(e) => chat.setUserInput(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full px-4 py-3 outline-none text-ink bg-transparent"
       />
@@ -49,7 +56,19 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
       )}
 
       {chat.error && (
-        <p className="text-warn text-xs px-4 pb-2">{chat.error}</p>
+        <div className="flex items-center justify-between gap-2 px-4 pb-2">
+          <p className="text-warn text-xs">{chat.error}</p>
+          {chat.canRetry && (
+            <button
+              type="button"
+              onClick={chat.handleRetry}
+              disabled={chat.isLoading}
+              className="shrink-0 rounded-md border border-line px-2 py-1 text-xs text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

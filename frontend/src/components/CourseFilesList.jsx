@@ -18,11 +18,19 @@ function CourseFilesList({ courseFiles }) {
             <li key={file.id}>
               <div className="flex items-center gap-2">
                 {file.media_type ? (
-                  <img
-                    src={fileContentUrl(file.id)}
-                    alt=""
-                    className="w-6 h-6 shrink-0 rounded-sm object-cover"
-                  />
+                  <a
+                    href={fileContentUrl(file.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open full size"
+                    className="shrink-0"
+                  >
+                    <img
+                      src={fileContentUrl(file.id)}
+                      alt=""
+                      className="w-6 h-6 rounded-sm object-cover"
+                    />
+                  </a>
                 ) : (
                   <FileText size={14} className="shrink-0 text-ink/50" />
                 )}

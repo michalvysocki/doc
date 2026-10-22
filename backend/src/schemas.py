@@ -182,13 +182,6 @@ class MoveTopicArgs(BaseModel):
     )
 
 
-class GenerationOptions(BaseModel):
-    instructions: (
-        Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None
-    ) = None
-    use_files: bool = False
-
-
 class RebuildPreviewNode(BaseModel):
     topic_id: uuid.UUID | None  # None = new topic
     title: str

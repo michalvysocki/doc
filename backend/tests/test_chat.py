@@ -474,3 +474,42 @@ def test_long_lesson_is_cut_in_the_topic_prompt():
 
     assert "y" * chat.MAX_LESSON_CHARS_IN_CONTEXT + "\n[...truncated]" in system
     assert "y" * (chat.MAX_LESSON_CHARS_IN_CONTEXT + 1) not in system
+
+
+def test_retry_without_an_unanswered_message_raises(monkeypatch):
+    monkeypatch.setattr(chat, "_last_unanswered_message", lambda conversation_id: None)
+
+    with pytest.raises(chat.NothingToRetryError):
+        chat._exchange(uuid.uuid4(), None, [], lambda history, summary: [])
+
+
+def test_retry_answers_the_saved_message_without_saving_it_again(monkeypatch):
+    saved = []
+    last = make_message(7, "user", "Explain borrowing")
+    monkeypatch.setattr(chat, "_last_unanswered_message", lambda conversation_id: last)
+    monkeypatch.setattr(
+        chat, "_conversation_window", lambda conversation_id: (None, [last])
+    )
+    monkeypatch.setattr(
+        chat,
+        "add_message",
+        lambda conversation_id, role, content, file_uuids=None: (
+            saved.append(role),
+            make_message(8, role, content),
+        )[1],
+    )
+    monkeypatch.setattr(chat, "send_query", lambda messages: "Answer")
+
+    reply = chat._exchange(
+        uuid.uuid4(),
+        None,
+        [],
+        lambda history, summary: [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": history[-1].content},
+        ],
+    )
+
+    assert saved == ["assistant"]
+    assert reply.user_message == last
+    assert reply.assistant_message.content == "Answer"

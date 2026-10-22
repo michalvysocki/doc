@@ -490,24 +490,50 @@ def _ask_with_tools(
     raise OpenRouterError("Model called tools too many times")
 
 
+class NothingToRetryError(Exception):
+    """Raised when the conversation has no unanswered message of the learner."""
+
+
+def _last_unanswered_message(conversation_id: uuid.UUID) -> ChatMessageOut | None:
+    """Returns the last message if it is the learner's and has no reply yet."""
+
+    with SessionLocal() as session:
+        last = session.execute(
+            select(ChatMessage.id, ChatMessage.role)
+            .where(ChatMessage.conversation_id == conversation_id)
+            .order_by(ChatMessage.id.desc())
+            .limit(1)
+        ).first()
+    if last is None or last.role != "user":
+        return None
+    return _list_messages(ChatMessage.id == last.id)[0]
+
+
 def _exchange(
     conversation_id: uuid.UUID,
-    content: str,
+    content: str | None,
     file_uuids: list[uuid.UUID],
     build_messages: Callable[[list[ChatMessageOut], str | None], list[dict[str, Any]]],
     tools: list[dict[str, Any]] | None = None,
     run_tool: ToolRunner | None = None,
 ) -> ChatReply:
     """
-    Saves the user's message, builds the model messages from the conversation
+    Saves the learner's message (or, with content None, takes the last
+    unanswered one again), builds the model messages from the conversation
     history, asks the model and saves its reply.
 
     Raises:
+        NothingToRetryError: if content is None and there is nothing to answer
         OpenRouterError: if the model or embeddings request fails; the user's
             message stays saved
     """
 
-    user_message = add_message(conversation_id, "user", content, file_uuids)
+    if content is None:
+        user_message = _last_unanswered_message(conversation_id)
+        if user_message is None:
+            raise NothingToRetryError()
+    else:
+        user_message = add_message(conversation_id, "user", content, file_uuids)
 
     summary, history = _conversation_window(conversation_id)
     messages = build_messages(history, summary)
@@ -568,11 +594,12 @@ def add_topic_note(topic_id: uuid.UUID, text: str) -> ChatMessageOut | None:
 
 def send_topic_message(
     topic_id: uuid.UUID,
-    content: str,
+    content: str | None,
     file_uuids: list[uuid.UUID],
 ) -> ChatReply | None:
     """
     Sends a message in the topic's conversation, with the lesson as context.
+    With content None, answers the last unanswered message again.
 
     Returns:
         ChatReply | None: both messages, or None if the topic does not exist
@@ -624,12 +651,12 @@ def send_topic_message(
 
 def send_course_message(
     course_id: uuid.UUID,
-    content: str,
+    content: str | None,
     file_uuids: list[uuid.UUID],
 ) -> ChatReply | None:
     """
     Sends a message in the course conversation, with the outline and progress
-    as context.
+    as context. With content None, answers the last unanswered message again.
 
     Returns:
         ChatReply | None: both messages, or None if the course does not exist
@@ -670,3 +697,15 @@ def send_course_message(
         tools=COURSE_TOOLS,
         run_tool=lambda name, arguments: run_course_tool(course_id, name, arguments),
     )
+
+
+def retry_topic_message(topic_id: uuid.UUID) -> ChatReply | None:
+    """Asks the model again to answer the last unanswered message of a topic chat."""
+
+    return send_topic_message(topic_id, None, [])
+
+
+def retry_course_message(course_id: uuid.UUID) -> ChatReply | None:
+    """Asks the model again to answer the last unanswered message of a course chat."""
+
+    return send_course_message(course_id, None, [])

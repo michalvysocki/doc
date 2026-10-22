@@ -6,19 +6,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from .chat import (
+    NothingToRetryError,
     add_course_note,
     add_topic_note,
     list_course_messages,
     list_topic_messages,
+    retry_course_message,
+    retry_topic_message,
     send_course_message,
     send_topic_message,
 )
 from .course_rebuilds import (
-    RebuildError,
     apply_course_rebuild,
     discard_course_rebuild,
     get_course_rebuild,
-    propose_course_rebuild,
 )
 from .courses import (
     course_exists,
@@ -53,7 +54,6 @@ from .schemas import (
     CourseOut,
     CourseRebuildOut,
     CourseSummary,
-    GenerationOptions,
     MessageCreate,
     PendingRegenerationOut,
     TaskOut,
@@ -224,16 +224,9 @@ def read_topic(topic_id: uuid.UUID):
 
 
 @app.post("/topics/{topic_id}/explanation", response_model=TopicDetail)
-def post_topic_explanation(
-    topic_id: uuid.UUID,
-    regenerate: bool = False,
-    request: GenerationOptions | None = None,
-):
-    options = request or GenerationOptions()
+def post_topic_explanation(topic_id: uuid.UUID):
     try:
-        topic = create_explanation(
-            topic_id, regenerate, options.instructions or None, options.use_files
-        )
+        topic = create_explanation(topic_id)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -264,6 +257,23 @@ def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
     return reply
 
 
+@app.post("/topics/{topic_id}/messages/retry", response_model=ChatReply)
+def post_topic_retry(topic_id: uuid.UUID):
+    try:
+        reply = retry_topic_message(topic_id)
+    except NothingToRetryError as e:
+        raise HTTPException(
+            status_code=409, detail="There is no unanswered message"
+        ) from e
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if reply is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return reply
+
+
 @app.get("/topics/{topic_id}/tasks", response_model=list[TaskOut])
 def read_tasks(topic_id: uuid.UUID):
     if not topic_exists(topic_id):
@@ -273,16 +283,9 @@ def read_tasks(topic_id: uuid.UUID):
 
 
 @app.post("/topics/{topic_id}/tasks", response_model=list[TaskOut])
-def post_tasks(
-    topic_id: uuid.UUID,
-    regenerate: bool = False,
-    request: GenerationOptions | None = None,
-):
-    options = request or GenerationOptions()
+def post_tasks(topic_id: uuid.UUID):
     try:
-        tasks = create_tasks(
-            topic_id, regenerate, options.instructions or None, options.use_files
-        )
+        tasks = create_tasks(topic_id)
     except LessonMissingError as e:
         raise HTTPException(
             status_code=409, detail="The lesson has not been generated yet"
@@ -334,6 +337,23 @@ def read_course_messages(course_id: uuid.UUID):
 def post_course_message(course_id: uuid.UUID, request: MessageCreate):
     try:
         reply = send_course_message(course_id, request.content, request.file_uuids)
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if reply is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return reply
+
+
+@app.post("/courses/{course_id}/messages/retry", response_model=ChatReply)
+def post_course_retry(course_id: uuid.UUID):
+    try:
+        reply = retry_course_message(course_id)
+    except NothingToRetryError as e:
+        raise HTTPException(
+            status_code=409, detail="There is no unanswered message"
+        ) from e
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -399,26 +419,6 @@ def post_discard_course_rebuild(rebuild_id: uuid.UUID):
         raise HTTPException(status_code=404, detail="Course rebuild not found")
 
     return add_course_note(course_id, "[Discarded course rebuild]")
-
-
-@app.post("/courses/{course_id}/rebuild", response_model=CourseRebuildOut)
-def post_course_rebuild(course_id: uuid.UUID, request: GenerationOptions | None = None):
-    options = request or GenerationOptions()
-    try:
-        rebuild_id = propose_course_rebuild(
-            course_id, options.instructions or None, options.use_files
-        )
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-    except RebuildError as e:
-        raise HTTPException(
-            status_code=502, detail=f"The generated plan cannot be used: {e}"
-        ) from e
-
-    if rebuild_id is None:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    return get_course_rebuild(course_id)
 
 
 @app.get(

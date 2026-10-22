@@ -98,6 +98,13 @@ export default function usePersistentChat(
     } catch (error) {
       console.error("Error while sending message: ", error);
       const saved = await fetchJson(sendingPath).catch(() => null);
+      const wasSaved =
+        saved?.at(-1)?.role === "user" &&
+        saved.at(-1).content === pending.content.trim();
+      if (!wasSaved) {
+        setUserInput(pending.content);
+        fileUpload.setDocuments(documents);
+      }
       updateChat(sendingPath, (prev) => ({
         ...prev,
         messages: saved ?? prev.messages,
@@ -108,7 +115,31 @@ export default function usePersistentChat(
     }
   }
 
+  async function handleRetry() {
+    const retryPath = path;
+    updateChat(retryPath, (prev) => ({ ...prev, error: null }));
+    setIsLoading(true);
+
+    try {
+      const reply = await fetchJson(`${retryPath}/retry`, { method: "POST" });
+      updateChat(retryPath, (prev) => ({
+        ...prev,
+        messages: [...prev.messages, reply.assistant_message],
+      }));
+      if (reply.course_changed) onCourseChanged?.();
+    } catch (error) {
+      console.error("Error while retrying message: ", error);
+      updateChat(retryPath, (prev) => ({ ...prev, error: error.message }));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   const isCurrent = chat.path === path;
+  const lastMessage = isCurrent ? chat.messages.at(-1) : null;
+  const canRetry = Boolean(
+    isCurrent && chat.error && lastMessage?.role === "user",
+  );
   const messageHistory = useMemo(
     () => (isCurrent ? chat.messages.map(toViewMessage) : []),
     [isCurrent, chat.messages],
@@ -119,6 +150,8 @@ export default function usePersistentChat(
     setUserInput,
     messageHistory,
     handleSend,
+    handleRetry,
+    canRetry,
     appendMessage,
     isLoading,
     error: isCurrent ? chat.error : null,
