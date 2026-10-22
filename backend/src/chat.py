@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .course_tools import COURSE_TOOLS, TOPIC_TOOLS, run_course_tool, run_topic_tool
 from .courses import get_course, get_topic
 from .database import SessionLocal
+from .learner_profile import format_learner_profile
 from .models import ChatMessage, Conversation, Document
 from .openrouter import (
     COURSE_CHAT_SYSTEM_PROMPT,
@@ -379,6 +380,7 @@ def build_topic_chat_messages(
     goal: str | None = None,
     summary: str | None = None,
     course_files: str | None = None,
+    learner_profile: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -400,6 +402,8 @@ def build_topic_chat_messages(
         f"SUBTOPICS OF THIS LESSON (lesson level {level} of max 3):\n"
         + (subtopics or "(none)"),
     ]
+    if learner_profile:
+        sections.append(learner_profile)
     if course_files:
         sections.append(course_files)
     if summary:
@@ -422,6 +426,7 @@ def build_course_chat_messages(
     history: list[ChatMessageOut],
     summary: str | None = None,
     course_files: str | None = None,
+    learner_profile: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course goal,
@@ -437,6 +442,8 @@ def build_course_chat_messages(
         f"PROGRESS: {completed} topics completed",
         f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
     ]
+    if learner_profile:
+        sections.append(learner_profile)
     if course_files:
         sections.append(course_files)
     if summary:
@@ -635,6 +642,7 @@ def send_topic_message(
             goal=course.initial_prompt,
             summary=summary,
             course_files=format_course_files(topic.course_id),
+            learner_profile=format_learner_profile(topic.course_id),
         )
 
     return _exchange(
@@ -687,6 +695,7 @@ def send_course_message(
             history,
             summary=summary,
             course_files=format_course_files(course_id),
+            learner_profile=format_learner_profile(course_id),
         )
 
     return _exchange(

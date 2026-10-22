@@ -56,6 +56,7 @@ from .schemas import (
     CourseSummary,
     MessageCreate,
     PendingRegenerationOut,
+    ReviewTaskOut,
     TaskOut,
     TopicDeletionOut,
     TopicDetail,
@@ -63,6 +64,7 @@ from .schemas import (
 from .tasks import (
     LessonMissingError,
     create_tasks,
+    get_due_reviews,
     get_tasks,
     grade_attempt,
     submit_attempt,
@@ -187,6 +189,14 @@ def create_course(
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     return get_course(course_id)
+
+
+@app.get("/courses/{course_id}/reviews", response_model=list[ReviewTaskOut])
+def read_reviews(course_id: uuid.UUID):
+    if not course_exists(course_id):
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    return get_due_reviews(course_id)
 
 
 @app.get("/courses/{course_id}/files", response_model=list[CourseFileOut])

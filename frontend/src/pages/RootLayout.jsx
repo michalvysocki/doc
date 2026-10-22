@@ -54,6 +54,7 @@ function RootLayout() {
           setIsChatOpen,
           creation,
           handleCreateCourse,
+          refreshCourses: coursesState.refresh,
         }}
       />
     </div>

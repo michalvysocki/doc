@@ -1,6 +1,7 @@
 import logging
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import and_, delete, exists, func, select, true, update
@@ -66,12 +67,18 @@ def _flatten_topics(
     return topics
 
 
+def due_condition(now: datetime):
+    """Active tasks whose review date has come."""
+
+    return and_(Task.archived_at.is_(None), Task.review_due_at <= now)
+
+
 def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
     """
     Builds a nested topic tree from flat topic rows.
 
-    Rows need id, parent_id, title, description, has_explanation, tasks_total
-    and tasks_solved attributes and must be ordered by position.
+    Rows need id, parent_id, title, description, has_explanation, tasks_total,
+    tasks_solved and reviews_due attributes and must be ordered by position.
     """
 
     nodes = {
@@ -82,6 +89,7 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
             has_explanation=row.has_explanation,
             tasks_total=row.tasks_total,
             tasks_solved=row.tasks_solved,
+            reviews_due=row.reviews_due,
             children=[],
         )
         for row in rows
@@ -100,19 +108,24 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
 
 def _course_progress(topics: list[TopicOut]) -> CourseProgress:
     """
-    Counts all topics in the tree and the completed ones (with all tasks solved).
+    Counts all topics in the tree, the completed ones (with all tasks solved)
+    and the tasks due for review.
     """
 
     total = 0
     completed = 0
+    reviews = 0
     for topic in topics:
         children = _course_progress(topic.children)
         total += 1 + children.topics_total
         completed += children.topics_completed
+        reviews += topic.reviews_due + children.reviews_due
         if topic.tasks_total > 0 and topic.tasks_solved == topic.tasks_total:
             completed += 1
 
-    return CourseProgress(topics_total=total, topics_completed=completed)
+    return CourseProgress(
+        topics_total=total, topics_completed=completed, reviews_due=reviews
+    )
 
 
 class TopicPlacementError(Exception):
@@ -382,6 +395,9 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
                 Task.topic_id,
                 func.count().label("tasks_total"),
                 func.count().filter(Task.id.in_(solved_task_ids)).label("tasks_solved"),
+                func.count()
+                .filter(Task.review_due_at <= datetime.now(UTC))
+                .label("reviews_due"),
             )
             .where(Task.archived_at.is_(None))
             .group_by(Task.topic_id)
@@ -397,6 +413,7 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
                 Topic.explanation.is_not(None).label("has_explanation"),
                 func.coalesce(task_counts.c.tasks_total, 0).label("tasks_total"),
                 func.coalesce(task_counts.c.tasks_solved, 0).label("tasks_solved"),
+                func.coalesce(task_counts.c.reviews_due, 0).label("reviews_due"),
             )
             .outerjoin(task_counts, task_counts.c.topic_id == Topic.id)
             .where(Topic.course_id == course_id)
@@ -421,15 +438,34 @@ def list_courses() -> list[CourseSummary]:
     Returns all courses without topics, newest first.
     """
 
-    statement = select(Course.id, Course.title, Course.created_at).order_by(
-        Course.created_at.desc()
+    reviews = (
+        select(Topic.course_id, func.count().label("reviews_due"))
+        .join(Task, Task.topic_id == Topic.id)
+        .where(due_condition(datetime.now(UTC)))
+        .group_by(Topic.course_id)
+        .subquery()
+    )
+    statement = (
+        select(
+            Course.id,
+            Course.title,
+            Course.created_at,
+            func.coalesce(reviews.c.reviews_due, 0).label("reviews_due"),
+        )
+        .outerjoin(reviews, reviews.c.course_id == Course.id)
+        .order_by(Course.created_at.desc())
     )
 
     with SessionLocal() as session:
         rows = session.execute(statement).all()
 
     return [
-        CourseSummary(id=row.id, title=row.title, created_at=row.created_at)
+        CourseSummary(
+            id=row.id,
+            title=row.title,
+            created_at=row.created_at,
+            reviews_due=row.reviews_due,
+        )
         for row in rows
     ]
 

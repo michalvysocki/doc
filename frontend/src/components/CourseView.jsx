@@ -1,4 +1,5 @@
-import { useOutletContext } from "react-router";
+import { Link, useOutletContext } from "react-router";
+import { RotateCcw } from "lucide-react";
 import CourseRebuildPreview from "./CourseRebuildPreview";
 import SourcesList from "./SourcesList";
 import TopicCard from "./TopicCard";
@@ -24,6 +25,17 @@ function CourseView() {
           {topics_completed} / {topics_total} topics completed
         </p>
       </div>
+
+      {course.progress.reviews_due > 0 && (
+        <Link
+          to={`/courses/${course.id}/review`}
+          className="inline-flex items-center gap-2 mt-4 rounded-md bg-accent px-3 py-1.5 text-sm text-paper hover:opacity-90"
+        >
+          <RotateCcw size={14} />
+          {course.progress.reviews_due}{" "}
+          {course.progress.reviews_due === 1 ? "task" : "tasks"} to review →
+        </Link>
+      )}
 
       {courseRebuild.rebuild && (
         <div className="mt-4">

@@ -72,6 +72,10 @@ class Task(Base):
     question: Mapped[str] = mapped_column(Text)
     grading_notes: Mapped[str] = mapped_column(Text)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Spaced repetition: correct answers in a row and when the task is due
+    # again (None until the task has its first graded attempt).
+    review_streak: Mapped[int] = mapped_column(server_default=text("0"))
+    review_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -1,13 +1,17 @@
 import uuid
 from collections import defaultdict
+from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
 
-from .courses import get_course, get_file_materials, get_topic
+from .courses import due_condition, get_course, get_file_materials, get_topic
 from .database import SessionLocal
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_tasks, grade_answer
-from .schemas import AttemptOut, GeneratedTask, TaskOut
+from .schemas import AttemptOut, GeneratedTask, ReviewTaskOut, TaskOut
+
+REVIEW_LADDER_DAYS = [1, 3, 7, 14, 30]
 
 
 class LessonMissingError(Exception):
@@ -24,6 +28,49 @@ def _attempt_out(attempt: TaskAttempt) -> AttemptOut:
     )
 
 
+def _attempts_by_task(
+    session: Session, task_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[AttemptOut]]:
+    """Returns the attempts of the given tasks, oldest first, grouped by task."""
+
+    attempts = defaultdict(list)
+    if task_ids:
+        for attempt in session.scalars(
+            select(TaskAttempt)
+            .where(TaskAttempt.task_id.in_(task_ids))
+            .order_by(TaskAttempt.id)
+        ):
+            attempts[attempt.task_id].append(_attempt_out(attempt))
+    return attempts
+
+
+def get_due_reviews(course_id: uuid.UUID) -> list[ReviewTaskOut]:
+    """Returns the course's tasks due for review, the longest overdue first."""
+
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(Task, Topic.title)
+            .join(Topic, Task.topic_id == Topic.id)
+            .where(Topic.course_id == course_id, due_condition(datetime.now(UTC)))
+            .order_by(Task.review_due_at, Topic.position, Task.position)
+        ).all()
+        attempts = _attempts_by_task(session, [task.id for task, _ in rows])
+
+        return [
+            ReviewTaskOut(
+                id=task.id,
+                position=task.position,
+                question=task.question,
+                attempts=attempts[task.id],
+                topic_id=task.topic_id,
+                topic_title=title,
+                review_streak=task.review_streak,
+                review_due_at=task.review_due_at,
+            )
+            for task, title in rows
+        ]
+
+
 def get_tasks(topic_id: uuid.UUID) -> list[TaskOut]:
     """
     Returns active (not archived) tasks of a topic, in order, with their attempts.
@@ -36,15 +83,7 @@ def get_tasks(topic_id: uuid.UUID) -> list[TaskOut]:
             .order_by(Task.position)
         ).all()
 
-        attempts = defaultdict(list)
-        task_ids = [task.id for task in tasks]
-        if task_ids:
-            for attempt in session.scalars(
-                select(TaskAttempt)
-                .where(TaskAttempt.task_id.in_(task_ids))
-                .order_by(TaskAttempt.id)
-            ):
-                attempts[attempt.task_id].append(_attempt_out(attempt))
+        attempts = _attempts_by_task(session, [task.id for task in tasks])
 
         return [
             TaskOut(
@@ -158,6 +197,26 @@ def add_tasks(topic_id: uuid.UUID, tasks: list[GeneratedTask]) -> list[int]:
     return [start + i + 1 for i in range(len(tasks))]
 
 
+def next_review(streak: int, verdict: str, now: datetime) -> tuple[int, datetime]:
+    """
+    Returns the new streak of correct answers and the next review date after a
+    graded attempt: correct answers climb the ladder, a partially correct one
+    comes back tomorrow, an incorrect one comes back tomorrow and starts over.
+    The date is the start of that day (UTC), so a task is due for the whole day.
+    """
+
+    if verdict == "correct":
+        streak += 1
+        days = REVIEW_LADDER_DAYS[min(streak, len(REVIEW_LADDER_DAYS)) - 1]
+    else:
+        days = 1
+        if verdict == "incorrect":
+            streak = 0
+
+    day = (now + timedelta(days=days)).date()
+    return streak, datetime.combine(day, time.min, tzinfo=UTC)
+
+
 def submit_attempt(task_id: uuid.UUID, answer: str) -> AttemptOut | None:
     """
     Saves the learner's answer and grades it. If grading fails, the attempt
@@ -213,9 +272,10 @@ def grade_attempt(attempt_id: int) -> AttemptOut | None:
     grade = grade_answer(question, grading_notes, answer)
 
     with SessionLocal() as session, session.begin():
-        session.execute(
-            update(TaskAttempt)
-            .where(TaskAttempt.id == attempt_id)
-            .values(verdict=grade.verdict, feedback=grade.feedback)
+        attempt = session.get(TaskAttempt, attempt_id)
+        attempt.verdict, attempt.feedback = grade.verdict, grade.feedback
+        task = session.get(Task, attempt.task_id)
+        task.review_streak, task.review_due_at = next_review(
+            task.review_streak, grade.verdict, datetime.now(UTC)
         )
-        return _attempt_out(session.get(TaskAttempt, attempt_id))
+        return _attempt_out(attempt)

@@ -22,6 +22,11 @@ function TopicCard({ topic }) {
         />
         <span className="font-medium">{topic.title}</span>
         <span className="ml-auto flex items-center gap-2 shrink-0">
+          {topic.reviews_due > 0 && (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
+              {topic.reviews_due} to review
+            </span>
+          )}
           {topic.has_explanation && (
             <BookCheck
               size={16}

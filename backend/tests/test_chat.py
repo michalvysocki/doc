@@ -513,3 +513,15 @@ def test_retry_answers_the_saved_message_without_saving_it_again(monkeypatch):
     assert saved == ["assistant"]
     assert reply.user_message == last
     assert reply.assistant_message.content == "Answer"
+
+
+def test_learner_profile_section_in_both_chats():
+    profile = "LEARNER PROFILE (from practice tasks):\n- Strong: Variables"
+
+    topic = build_topic_chat_messages(
+        make_topic_detail(), "", [], [], [], learner_profile=profile
+    )
+    course = build_course_chat_messages(make_course([]), "", [], [])
+
+    assert profile in topic[0]["content"]
+    assert "LEARNER PROFILE" not in course[0]["content"]

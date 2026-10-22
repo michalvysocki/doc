@@ -16,10 +16,15 @@ import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
   const { courseId } = useParams();
-  const { fileUpload, isChatOpen, setIsChatOpen } = useOutletContext();
+  const { fileUpload, isChatOpen, setIsChatOpen, refreshCourses } =
+    useOutletContext();
   const location = useLocation();
   const isMapView = useMatch("/courses/:courseId") !== null;
   const [courseVersion, setCourseVersion] = useState(0);
+  const refreshCourse = () => {
+    setCourseVersion((version) => version + 1);
+    refreshCourses();
+  };
   const { course, error } = useCourse(
     courseId,
     `${isMapView ? location.key : "topic"}:${courseVersion}`,
@@ -29,18 +34,18 @@ function CourseLayout() {
   const coursePath = `/courses/${courseId}/messages`;
   const chatPath = topicId ? `/topics/${topicId}/messages` : coursePath;
   const persistentChat = usePersistentChat(chatPath, fileUpload, {
-    onCourseChanged: () => setCourseVersion((version) => version + 1),
+    onCourseChanged: refreshCourse,
   });
   const topicDeletions = useTopicDeletions(courseId, courseVersion, {
     onResolved: (note, action) => {
       persistentChat.appendMessage(coursePath, note);
-      if (action === "confirm") setCourseVersion((version) => version + 1);
+      if (action === "confirm") refreshCourse();
     },
   });
   const courseRebuild = useCourseRebuild(courseId, courseVersion, {
     onResolved: (note, action) => {
       persistentChat.appendMessage(coursePath, note);
-      if (action === "apply") setCourseVersion((version) => version + 1);
+      if (action === "apply") refreshCourse();
     },
   });
   const courseFiles = useCourseFiles(courseId, {
@@ -55,7 +60,7 @@ function CourseLayout() {
         `/topics/${proposal.topic_id}/messages`,
         note,
       );
-      if (action === "confirm") setCourseVersion((version) => version + 1);
+      if (action === "confirm") refreshCourse();
     },
   });
   const mainRef = useRef(null);
@@ -72,7 +77,9 @@ function CourseLayout() {
         ) : course === null ? (
           <p className="text-sm text-ink/60">Loading course...</p>
         ) : (
-          <Outlet context={{ course, courseVersion, courseRebuild }} />
+          <Outlet
+            context={{ course, courseVersion, courseRebuild, refreshCourse }}
+          />
         )}
       </main>
 

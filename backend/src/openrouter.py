@@ -139,6 +139,8 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "You can search the web, but only when the question needs current or "
     "external information that the lesson and the course materials do not "
     "cover. Do not write your own list of sources; it is added automatically. "
+    "If the learner profile shows they struggled with this or a related topic, "
+    "take it into account when explaining. "
     "Answer in the language of the learner's last message and use Markdown."
 )
 
@@ -169,6 +171,8 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     "You can search the web, but only when the question needs current or "
     "external information that the lesson and the course materials do not "
     "cover. Do not write your own list of sources; it is added automatically. "
+    "Use the learner profile to suggest what to review or study next; when tasks "
+    "are due for review, mention it when the learner asks what to do. "
     "Answer in the language of the learner's last message and use Markdown."
 )
 

@@ -90,6 +90,14 @@ function Sidebar({
             >
               {course.title}
             </button>
+            {course.reviews_due > 0 && (
+              <span
+                className="mr-1 rounded-full bg-accent px-1.5 text-xs text-paper"
+                title={`${course.reviews_due} tasks to review`}
+              >
+                {course.reviews_due}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onDeleteCourse(course)}

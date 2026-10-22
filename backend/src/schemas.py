@@ -61,12 +61,14 @@ class TopicOut(BaseModel):
     has_explanation: bool
     tasks_total: int
     tasks_solved: int
+    reviews_due: int = 0
     children: list["TopicOut"]
 
 
 class CourseProgress(BaseModel):
     topics_total: int
     topics_completed: int
+    reviews_due: int = 0
 
 
 class Source(BaseModel):
@@ -89,6 +91,7 @@ class CourseSummary(BaseModel):
     id: uuid.UUID
     title: str
     created_at: datetime
+    reviews_due: int = 0
 
 
 class CourseFileOut(BaseModel):
@@ -314,6 +317,13 @@ class TaskOut(BaseModel):
     position: int
     question: str
     attempts: list[AttemptOut]
+
+
+class ReviewTaskOut(TaskOut):
+    topic_id: uuid.UUID
+    topic_title: str
+    review_streak: int
+    review_due_at: datetime
 
 
 class TaskGrade(BaseModel):

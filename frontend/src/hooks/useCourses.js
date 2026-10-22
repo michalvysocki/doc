@@ -6,6 +6,8 @@ export default function useCourses() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
   useEffect(() => {
     fetchJson("/courses")
       .then(setCourses)
@@ -14,7 +16,11 @@ export default function useCourses() {
         setError(error.message);
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [refreshKey]);
+
+  function refresh() {
+    setRefreshKey((key) => key + 1);
+  }
 
   function addCourse(course) {
     setCourses((prev) => [
@@ -37,5 +43,5 @@ export default function useCourses() {
     }
   }
 
-  return { courses, isLoading, error, addCourse, removeCourse };
+  return { courses, isLoading, error, addCourse, removeCourse, refresh };
 }

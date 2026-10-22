@@ -17,6 +17,7 @@ def make_row(
     has_explanation: bool = False,
     tasks_total: int = 0,
     tasks_solved: int = 0,
+    reviews_due: int = 0,
 ):
     return SimpleNamespace(
         id=uuid.uuid4(),
@@ -26,6 +27,7 @@ def make_row(
         has_explanation=has_explanation,
         tasks_total=tasks_total,
         tasks_solved=tasks_solved,
+        reviews_due=reviews_due,
     )
 
 
@@ -121,6 +123,7 @@ def test_flatten_then_build_gives_back_the_same_tree():
             has_explanation=False,
             tasks_total=0,
             tasks_solved=0,
+            reviews_due=0,
         )
         for t in topics
     ]
@@ -172,3 +175,12 @@ def test_merge_sources_keeps_first_of_duplicates():
     ]
 
     assert merge_sources(first, None, second) == [*first, second[2]]
+
+
+def test_course_progress_sums_reviews_from_the_whole_tree():
+    parent = make_row("A", reviews_due=2)
+    rows = [parent, make_row("A1", parent, reviews_due=1), make_row("B", reviews_due=0)]
+
+    progress = _course_progress(_build_tree(rows))
+
+    assert progress.reviews_due == 3
