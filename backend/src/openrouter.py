@@ -31,7 +31,9 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "to advanced topics. Use at most 3 levels of nesting. Each topic should be "
     "specific enough to study in a single session. Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
-    "request."
+    "request. "
+    "You can search the web when the course needs current information, such as "
+    "new versions or recent tools; do not search for well-established subjects."
 )
 
 REBUILD_SYSTEM_PROMPT = (
@@ -43,7 +45,9 @@ REBUILD_SYSTEM_PROMPT = (
     "tasks and progress are kept; you may change its title, description and place. "
     "Prefer keeping topics with progress. Use each id at most once and null for "
     "new topics. Existing topics you leave out will be deleted. Do not number the "
-    "titles. Write in the language of the course."
+    "titles. Write in the language of the course. "
+    "You can search the web when the course needs current information, such as "
+    "new versions or recent tools; do not search for well-established subjects."
 )
 
 TOPIC_EXPLANATION_SYSTEM_PROMPT = (
@@ -211,10 +215,12 @@ def with_web_search(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*tools, WEB_SEARCH_TOOL] if WEB_SEARCH_ENABLED else tools
 
 
-def append_sources(content: str, annotations: list[dict[str, Any]] | None) -> str:
+def extract_web_sources(
+    annotations: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
     """
-    Appends a Markdown list of the web pages the model cited (from the
-    url_citation annotations), without duplicates and at most MAX_SOURCES.
+    Returns the web pages the model cited (from the url_citation annotations),
+    without duplicates and at most MAX_SOURCES.
     """
 
     sources: dict[str, str] = {}
@@ -224,13 +230,23 @@ def append_sources(content: str, annotations: list[dict[str, Any]] | None) -> st
         citation = annotation.get("url_citation") or {}
         url = citation.get("url")
         if url and url not in sources:
-            title = citation.get("title") or url
-            sources[url] = title.replace("[", "(").replace("]", ")")
+            sources[url] = citation.get("title") or url
 
+    return [
+        {"kind": "web", "title": title, "url": url}
+        for url, title in list(sources.items())[:MAX_SOURCES]
+    ]
+
+
+def append_sources(content: str, annotations: list[dict[str, Any]] | None) -> str:
+    """Appends a Markdown list of the cited web pages (used for chat replies)."""
+
+    sources = extract_web_sources(annotations)
     if not sources:
         return content
     lines = [
-        f"- [{title}]({url})" for url, title in list(sources.items())[:MAX_SOURCES]
+        f"- [{source['title'].replace('[', '(').replace(']', ')')}]({source['url']})"
+        for source in sources
     ]
     return f"{content}\n\n**Sources**\n" + "\n".join(lines)
 
@@ -274,49 +290,71 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
         ) from e
 
 
-def _structured_query[T: BaseModel](
-    messages: list[dict[str, Any]], schema: type[T], name: str, timeout: int
-) -> T:
+def _structured_query_with_sources[T: BaseModel](
+    messages: list[dict[str, Any]],
+    schema: type[T],
+    name: str,
+    timeout: int,
+    web_search: bool = False,
+) -> tuple[T, list[dict[str, Any]]]:
     """
     Asks the model for a JSON response matching the schema (strict structured
-    output) and validates it.
+    output), optionally letting it search the web, and validates it.
+
+    Returns:
+        tuple[T, list[dict[str, Any]]]: the parsed response and the cited web
+            pages
 
     Raises:
         OpenRouterError: if the request fails or the response does not match
     """
 
-    data = _post_to_openrouter(
-        URL,
-        {
-            "model": MODEL,
-            "messages": messages,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": name,
-                    "strict": True,
-                    "schema": schema.model_json_schema(),
-                },
+    payload: dict[str, Any] = {
+        "model": MODEL,
+        "messages": messages,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": name,
+                "strict": True,
+                "schema": schema.model_json_schema(),
             },
         },
-        timeout=timeout,
-    )
+    }
+    tools = with_web_search([]) if web_search else []
+    if tools:
+        payload["tools"] = tools
+    data = _post_to_openrouter(URL, payload, timeout=timeout)
 
     try:
-        return schema.model_validate_json(data["choices"][0]["message"]["content"])
+        message = data["choices"][0]["message"]
+        result = schema.model_validate_json(message["content"])
     except (KeyError, IndexError, ValidationError) as e:
         raise OpenRouterError(f"Model returned an invalid {name}") from e
 
+    return result, extract_web_sources(message.get("annotations"))
 
-def generate_topic_map(initial_prompt: str) -> TopicMap:
-    return _structured_query(
+
+def _structured_query[T: BaseModel](
+    messages: list[dict[str, Any]], schema: type[T], name: str, timeout: int
+) -> T:
+    """Like _structured_query_with_sources, without web search."""
+
+    return _structured_query_with_sources(messages, schema, name, timeout)[0]
+
+
+def generate_topic_map(
+    initial_prompt: str,
+) -> tuple[TopicMap, list[dict[str, Any]]]:
+    return _structured_query_with_sources(
         [
             {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
             {"role": "user", "content": initial_prompt},
         ],
         TopicMap,
         name="topic_map",
-        timeout=180,
+        timeout=240,
+        web_search=True,
     )
 
 
@@ -340,7 +378,7 @@ def generate_topic_explanation(
     materials: str | None = None,
     goal: str | None = None,
     outline: str | None = None,
-) -> str:
+) -> tuple[str, list[dict[str, Any]]]:
     context_lines = [
         f"Course: {course_title}",
         *([f"Learner's goal: {goal}"] if goal else []),
@@ -381,7 +419,7 @@ def generate_topic_explanation(
     if not content:
         raise OpenRouterError("Model returned an empty explanation")
 
-    return append_sources(content, message.get("annotations"))
+    return content, extract_web_sources(message.get("annotations"))
 
 
 def generate_tasks(
@@ -418,7 +456,7 @@ def generate_rebuild_plan(
     outline: str,
     instructions: str | None = None,
     materials: str | None = None,
-) -> RebuildPlan:
+) -> tuple[RebuildPlan, list[dict[str, Any]]]:
     context = _with_extras(
         f"Course: {course_title}\n"
         f"Course goal (the learner's original request): {initial_prompt}\n\n"
@@ -426,14 +464,15 @@ def generate_rebuild_plan(
         instructions,
         materials,
     )
-    return _structured_query(
+    return _structured_query_with_sources(
         [
             {"role": "system", "content": REBUILD_SYSTEM_PROMPT},
             {"role": "user", "content": context},
         ],
         RebuildPlan,
         name="rebuild_plan",
-        timeout=240,
+        timeout=300,
+        web_search=True,
     )
 
 

@@ -1,5 +1,6 @@
 import { Link, useOutletContext } from "react-router";
 import MarkdownContent from "../components/MarkdownContent";
+import SourcesList from "../components/SourcesList";
 
 function TheoryTab() {
   const { course, topic, error } = useOutletContext();
@@ -38,6 +39,8 @@ function TheoryTab() {
           </ul>
         </section>
       )}
+
+      <SourcesList sources={topic.sources} />
     </>
   );
 }

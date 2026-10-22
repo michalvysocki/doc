@@ -1,7 +1,7 @@
 import uuid
 from types import SimpleNamespace
 
-from src.courses import _build_tree, _course_progress, _flatten_topics
+from src.courses import _build_tree, _course_progress, _flatten_topics, merge_sources
 from src.schemas import TopicNode
 
 
@@ -158,3 +158,17 @@ def test_topic_without_tasks_is_not_completed():
     progress = _course_progress(_build_tree([make_row("A", has_explanation=True)]))
 
     assert progress.topics_completed == 0
+
+
+def test_merge_sources_keeps_first_of_duplicates():
+    first = [
+        {"kind": "web", "title": "A", "url": "https://a.dev"},
+        {"kind": "file", "title": "notes.pdf"},
+    ]
+    second = [
+        {"kind": "web", "title": "A again", "url": "https://a.dev"},
+        {"kind": "file", "title": "notes.pdf"},
+        {"kind": "file", "title": "exam.pdf"},
+    ]
+
+    assert merge_sources(first, None, second) == [*first, second[2]]

@@ -55,10 +55,11 @@ def test_generate_topic_map_still_works(monkeypatch):
     )
     monkeypatch.setattr(openrouter, "_post_to_openrouter", fake_response(content))
 
-    result = openrouter.generate_topic_map("Learn Rust")
+    result, sources = openrouter.generate_topic_map("Learn Rust")
 
     assert isinstance(result, TopicMap)
     assert result.course_title == "Rust"
+    assert sources == []
 
 
 def test_grading_messages_contain_task_notes_and_answer():
@@ -288,7 +289,80 @@ def test_lesson_request_uses_web_search_only_when_enabled(monkeypatch, enabled):
 
     monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", enabled)
     monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
-    lesson = openrouter.generate_topic_explanation("Rust", [], "Borrowing", "d", [])
+    lesson, sources = openrouter.generate_topic_explanation(
+        "Rust", [], "Borrowing", "d", []
+    )
 
     assert ("tools" in sent) is enabled
-    assert lesson == "Lesson\n\n**Sources**\n- [Page](https://a.dev)"
+    assert lesson == "Lesson"
+    assert sources == [{"kind": "web", "title": "Page", "url": "https://a.dev"}]
+
+
+def capture_structured_request(monkeypatch, enabled: bool, **options):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        message = {
+            "content": json.dumps({"tasks": [{"question": "Q", "grading_notes": "N"}]}),
+            "annotations": [citation("https://a.dev")],
+        }
+        return {"choices": [{"message": message}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", enabled)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    result = openrouter._structured_query_with_sources(
+        [], GeneratedTaskSet, "task_set", 10, **options
+    )
+    return sent, result
+
+
+def test_structured_query_can_search_and_return_sources(monkeypatch):
+    sent, (result, sources) = capture_structured_request(
+        monkeypatch, True, web_search=True
+    )
+
+    assert sent["tools"] == [openrouter.WEB_SEARCH_TOOL]
+    assert result.tasks[0].question == "Q"
+    assert sources == [{"kind": "web", "title": "Page", "url": "https://a.dev"}]
+
+
+@pytest.mark.parametrize(("enabled", "web_search"), [(True, False), (False, True)])
+def test_structured_query_sends_no_tools_without_search(
+    monkeypatch, enabled, web_search
+):
+    sent, _ = capture_structured_request(monkeypatch, enabled, web_search=web_search)
+
+    assert "tools" not in sent
+
+
+def test_tasks_and_grading_never_search(monkeypatch):
+    sent = []
+
+    def capture(url, payload, timeout):
+        sent.append(payload)
+        content = (
+            json.dumps({"tasks": [{"question": "Q", "grading_notes": "N"}]})
+            if len(sent) == 1
+            else json.dumps({"verdict": "correct", "feedback": "Good"})
+        )
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", True)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.generate_tasks("Rust", [], "Borrowing", "Text")
+    openrouter.grade_answer("Q", "N", "A")
+
+    assert all("tools" not in payload for payload in sent)
+
+
+def test_extract_web_sources_keeps_original_titles():
+    annotations = [
+        citation("https://a.dev", "A [docs]"),
+        citation("https://b.dev", None),
+    ]
+
+    assert openrouter.extract_web_sources(annotations) == [
+        {"kind": "web", "title": "A [docs]", "url": "https://a.dev"},
+        {"kind": "web", "title": "https://b.dev", "url": "https://b.dev"},
+    ]

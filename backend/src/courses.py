@@ -14,6 +14,7 @@ from .schemas import (
     CourseOut,
     CourseProgress,
     CourseSummary,
+    Source,
     TopicDetail,
     TopicLink,
     TopicMap,
@@ -263,9 +264,14 @@ def rename_topic(
     return old_title
 
 
-def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:
+def save_course(
+    initial_prompt: str,
+    topic_map: TopicMap,
+    sources: list[dict[str, Any]] | None = None,
+) -> uuid.UUID:
     """
-    Saves a course and its whole topic tree in one transaction.
+    Saves a course and its whole topic tree in one transaction, with the
+    sources used to plan it.
 
     Returns:
         uuid.UUID: id of the created course
@@ -273,7 +279,10 @@ def save_course(initial_prompt: str, topic_map: TopicMap) -> uuid.UUID:
 
     course_id = uuid.uuid4()
     course = Course(
-        id=course_id, title=topic_map.course_title, initial_prompt=initial_prompt
+        id=course_id,
+        title=topic_map.course_title,
+        initial_prompt=initial_prompt,
+        sources=sources or None,
     )
     topics = _flatten_topics(topic_map.topics, course_id)
 
@@ -338,6 +347,7 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
             created_at=course.created_at,
             topics=tree,
             progress=_course_progress(tree),
+            sources=course.sources or [],
         )
 
 
@@ -418,20 +428,43 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
             description=topic.description,
             explanation=topic.explanation,
             subtopics=subtopics,
+            sources=topic.sources or [],
         )
 
 
-def get_file_materials(course_id: uuid.UUID, query: str) -> str | None:
+def get_file_materials(
+    course_id: uuid.UUID, query: str
+) -> tuple[str | None, list[dict[str, Any]]]:
     """
     Returns fragments of the course's uploaded files relevant to the query,
-    formatted for a prompt, or None if the course has no matching files.
+    formatted for a prompt (None if there are none), and the files they come
+    from as sources.
     """
 
     fragments = retrieve_chunks(
         query=query,
         file_uuids=get_course_document_ids(course_id, files_only=True),
     )
-    return format_fragments(fragments) if fragments else None
+    if not fragments:
+        return None, []
+    names = dict.fromkeys(fragment["metadata"]["filename"] for fragment in fragments)
+    return format_fragments(fragments), [
+        {"kind": "file", "title": name} for name in names
+    ]
+
+
+def merge_sources(*lists: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """
+    Joins source lists, keeping the first of duplicates (same kind and the same
+    url, or title for files).
+    """
+
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for sources in lists:
+        for source in sources or []:
+            key = (source["kind"], source.get("url") or source["title"])
+            merged.setdefault(key, source)
+    return list(merged.values())
 
 
 def create_explanation(
@@ -456,14 +489,14 @@ def create_explanation(
     if topic.explanation is not None and not regenerate:
         return topic
 
-    materials = (
+    materials, file_sources = (
         get_file_materials(topic.course_id, f"{topic.title}\n{topic.description}")
         if use_files
-        else None
+        else (None, [])
     )
 
     course = get_course(topic.course_id)
-    explanation = generate_topic_explanation(
+    explanation, web_sources = generate_topic_explanation(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
         title=topic.title,
@@ -475,9 +508,13 @@ def create_explanation(
         outline=format_course_outline(course.topics, topic.id) if course else None,
     )
 
+    sources = merge_sources(web_sources, file_sources)
+
     with SessionLocal() as session, session.begin():
         session.execute(
-            update(Topic).where(Topic.id == topic_id).values(explanation=explanation)
+            update(Topic)
+            .where(Topic.id == topic_id)
+            .values(explanation=explanation, sources=sources or None)
         )
 
     try:
@@ -485,7 +522,12 @@ def create_explanation(
     except OpenRouterError:
         logger.warning("Could not index lesson %s for RAG", topic_id, exc_info=True)
 
-    return topic.model_copy(update={"explanation": explanation})
+    return topic.model_copy(
+        update={
+            "explanation": explanation,
+            "sources": [Source.model_validate(source) for source in sources],
+        }
+    )
 
 
 def index_lesson(topic_id: uuid.UUID) -> bool:

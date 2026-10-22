@@ -1,4 +1,5 @@
 import { Check, Plus } from "lucide-react";
+import SourcesList from "./SourcesList";
 
 function describeProgress({ has_explanation, tasks_total, tasks_solved }) {
   const parts = [];
@@ -63,6 +64,8 @@ function CourseRebuildPreview({ courseRebuild }) {
       <div className="mt-3">
         <PreviewTree nodes={rebuild.topics} />
       </div>
+
+      <SourcesList sources={rebuild.sources} className="mt-3" />
 
       {rebuild.deleted.length > 0 && (
         <div className="mt-4 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm">

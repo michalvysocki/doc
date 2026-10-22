@@ -69,6 +69,12 @@ class CourseProgress(BaseModel):
     topics_completed: int
 
 
+class Source(BaseModel):
+    kind: Literal["web", "file"]
+    title: str
+    url: str | None = None  # only for web pages
+
+
 class CourseOut(BaseModel):
     id: uuid.UUID
     title: str
@@ -76,6 +82,7 @@ class CourseOut(BaseModel):
     created_at: datetime
     topics: list[TopicOut]
     progress: CourseProgress
+    sources: list[Source] = []
 
 
 class CourseSummary(BaseModel):
@@ -98,6 +105,7 @@ class TopicDetail(BaseModel):
     description: str
     explanation: str | None
     subtopics: list[TopicLink]
+    sources: list[Source] = []
 
 
 class AttachmentOut(BaseModel):
@@ -203,6 +211,7 @@ class CourseRebuildOut(BaseModel):
     deleted: list[RebuildDeletedTopic]
     kept_count: int
     new_count: int
+    sources: list[Source] = []
 
 
 class ProposeCourseRebuildArgs(BaseModel):

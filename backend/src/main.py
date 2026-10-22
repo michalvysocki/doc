@@ -167,11 +167,11 @@ def read_courses():
 @app.post("/courses", status_code=201, response_model=CourseOut)
 def create_course(request: CourseCreate):
     try:
-        topic_map = generate_topic_map(request.initial_prompt)
+        topic_map, sources = generate_topic_map(request.initial_prompt)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
-    course_id = save_course(request.initial_prompt, topic_map)
+    course_id = save_course(request.initial_prompt, topic_map, sources)
 
     return get_course(course_id)
 

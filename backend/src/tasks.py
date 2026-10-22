@@ -89,7 +89,7 @@ def create_tasks(
             return existing
 
     materials = (
-        get_file_materials(topic.course_id, f"{topic.title}\n{topic.description}")
+        get_file_materials(topic.course_id, f"{topic.title}\n{topic.description}")[0]
         if use_files
         else None
     )

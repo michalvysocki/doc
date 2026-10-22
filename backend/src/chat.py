@@ -368,13 +368,16 @@ def _exchange(
     )
 
 
-def add_course_note(course_id: uuid.UUID, text: str) -> ChatMessageOut:
+def add_course_note(
+    course_id: uuid.UUID, text: str, role: str = "user"
+) -> ChatMessageOut:
     """
-    Adds a note about the learner's action (e.g. a confirmed deletion) to the
-    course conversation, so the model knows about it in the next message.
+    Adds a note to the course conversation, so the model knows about it in the
+    next message: the learner's action (e.g. a confirmed deletion) or, with the
+    assistant role, information such as the sources used to plan the course.
     """
 
-    return add_message(get_or_create_conversation(course_id), "user", text)
+    return add_message(get_or_create_conversation(course_id), role, text)
 
 
 def add_topic_note(topic_id: uuid.UUID, text: str) -> ChatMessageOut | None:

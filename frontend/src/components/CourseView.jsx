@@ -1,5 +1,6 @@
 import { useOutletContext } from "react-router";
 import CourseRebuildPreview from "./CourseRebuildPreview";
+import SourcesList from "./SourcesList";
 import TopicCard from "./TopicCard";
 
 function CourseView() {
@@ -35,6 +36,8 @@ function CourseView() {
           <TopicCard key={topic.id} topic={topic} />
         ))}
       </div>
+
+      <SourcesList sources={course.sources} />
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import uuid
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .courses import get_course, get_file_materials
+from .courses import get_course, get_file_materials, merge_sources
 from .database import SessionLocal
-from .models import CourseRebuild, Document, Task, TaskAttempt, Topic
+from .models import Course, CourseRebuild, Document, Task, TaskAttempt, Topic
 from .openrouter import generate_rebuild_plan
 from .outline import format_outline_with_progress
 from .schemas import (
@@ -94,14 +94,14 @@ def propose_course_rebuild(
     if course is None:
         return None
 
-    materials = (
+    materials, file_sources = (
         get_file_materials(
             course_id, f"{course.title}\n{course.initial_prompt}\n{instructions or ''}"
         )
         if use_files
-        else None
+        else (None, [])
     )
-    plan = generate_rebuild_plan(
+    plan, web_sources = generate_rebuild_plan(
         course_title=course.title,
         initial_prompt=course.initial_prompt,
         outline=format_outline_with_progress(
@@ -127,7 +127,11 @@ def propose_course_rebuild(
             delete(CourseRebuild).where(CourseRebuild.course_id == course_id)
         )
         rebuild = CourseRebuild(
-            course_id=course_id, plan=RebuildPlan(topics=topics).model_dump()
+            course_id=course_id,
+            plan={
+                **RebuildPlan(topics=topics).model_dump(),
+                "sources": merge_sources(web_sources, file_sources),
+            },
         )
         session.add(rebuild)
         session.flush()
@@ -201,6 +205,13 @@ def _attempt_counts(topic_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
     return dict(rows)
 
 
+def _plan_sources(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Returns the sources saved with a plan ([] for plans saved without a list)."""
+
+    sources = plan.get("sources")
+    return sources if isinstance(sources, list) else []
+
+
 def get_course_rebuild(course_id: uuid.UUID) -> CourseRebuildOut | None:
     """
     Returns the pending rebuild of a course compared with the current course:
@@ -217,7 +228,8 @@ def get_course_rebuild(course_id: uuid.UUID) -> CourseRebuildOut | None:
         if rebuild is None:
             return None
         rebuild_id = rebuild.id
-        plan = RebuildPlan.model_validate(rebuild.plan)
+        sources = _plan_sources(rebuild.plan)
+        plan = RebuildPlan.model_validate({"topics": rebuild.plan["topics"]})
 
     current = _flatten(get_course(course_id).topics)
     nodes = sanitize_plan(plan.topics, {str(topic_id) for topic_id in current})
@@ -240,6 +252,7 @@ def get_course_rebuild(course_id: uuid.UUID) -> CourseRebuildOut | None:
         ],
         kept_count=len(kept),
         new_count=_count_nodes(nodes) - len(kept),
+        sources=sources,
     )
 
 
@@ -310,7 +323,7 @@ def apply_course_rebuild(rebuild_id: uuid.UUID) -> RebuildResult | None:
         if rebuild is None:
             return None
         course_id = rebuild.course_id
-        plan = RebuildPlan.model_validate(rebuild.plan)
+        plan = RebuildPlan.model_validate({"topics": rebuild.plan["topics"]})
 
         topics = {
             topic.id: topic
@@ -327,6 +340,10 @@ def apply_course_rebuild(rebuild_id: uuid.UUID) -> RebuildResult | None:
         deleted = [topic_id for topic_id in topics if topic_id not in kept]
         if deleted:
             session.execute(delete(Topic).where(Topic.id.in_(deleted)))
+        course = session.get(Course, course_id)
+        course.sources = (
+            merge_sources(course.sources, _plan_sources(rebuild.plan)) or None
+        )
         session.delete(rebuild)
 
     return RebuildResult(course_id, len(kept), added, len(deleted))

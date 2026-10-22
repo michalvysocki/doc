@@ -37,6 +37,7 @@ class Course(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255))
     initial_prompt: Mapped[str] = mapped_column(Text)
+    sources: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -56,6 +57,7 @@ class Topic(Base):
     description: Mapped[str] = mapped_column(Text)
     position: Mapped[int]
     explanation: Mapped[str | None] = mapped_column(Text)
+    sources: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
 
 
 class Task(Base):

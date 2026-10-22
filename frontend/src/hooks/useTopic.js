@@ -60,6 +60,10 @@ export default function useTopic(topicId, refreshKey = 0) {
                   ...prev.topic,
                   subtopics: fresh.subtopics,
                   explanation: fresh.explanation ?? prev.topic.explanation,
+                  sources:
+                    fresh.explanation !== null
+                      ? fresh.sources
+                      : prev.topic.sources,
                 },
               }
             : prev,
