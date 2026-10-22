@@ -1,22 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchJson } from "../utils/api";
-import { MAX_UPLOAD_BYTES } from "../utils/uploadLimits";
-
-const readFile = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-
-    reader.readAsDataURL(file);
-  });
-};
+import { IMAGE_TYPES, MAX_UPLOAD_BYTES } from "../utils/uploadLimits";
 
 export default function useFileUpload(courseId) {
   const fileInput = useRef(null);
   const [documents, setDocuments] = useState([]);
-  const [images, setImages] = useState([]);
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -25,7 +13,6 @@ export default function useFileUpload(courseId) {
   if (courseId !== stagedFor) {
     setStagedFor(courseId);
     setDocuments([]);
-    setImages([]);
     setError(null);
   }
   const courseIdRef = useRef(courseId);
@@ -35,51 +22,34 @@ export default function useFileUpload(courseId) {
 
   async function handleFile(file_data) {
     const forCourseId = courseId;
-    const isImage = file_data.type.startsWith("image/");
-    if (!isImage && file_data.size > MAX_UPLOAD_BYTES) {
+    if (file_data.size > MAX_UPLOAD_BYTES) {
       return `${file_data.name}: the file is too large (max 20 MB)`;
     }
 
-    if (isImage) {
-      try {
-        const base64data = await readFile(file_data);
-        if (courseIdRef.current !== forCourseId) return null;
+    try {
+      const formData = new FormData();
+      formData.append("file", file_data);
+      if (courseId) formData.append("course_id", courseId);
 
-        const newImage = {
-          id: crypto.randomUUID(),
-          filename: file_data.name,
-          type: file_data.type,
-          data: base64data,
-        };
+      const data = await fetchJson("/parse_file", {
+        method: "POST",
+        body: formData,
+      });
+      if (courseIdRef.current !== forCourseId) return null;
 
-        setImages((prev) => [...prev, newImage]);
-      } catch (error) {
-        console.error("Error while processing image: ", error);
-        return `${file_data.name}: couldn't read the image`;
-      }
-    } else {
-      try {
-        const formData = new FormData();
-        formData.append("file", file_data);
-        if (courseId) formData.append("course_id", courseId);
+      const newDocument = {
+        file_uuid: data.file_uuid,
+        filename: data.filename,
+        type: file_data.type,
+        media_type: IMAGE_TYPES.includes(file_data.type)
+          ? file_data.type
+          : null,
+      };
 
-        const data = await fetchJson("/parse_file", {
-          method: "POST",
-          body: formData,
-        });
-        if (courseIdRef.current !== forCourseId) return null;
-
-        const newDocument = {
-          file_uuid: data.file_uuid,
-          filename: data.filename,
-          type: file_data.type,
-        };
-
-        setDocuments((prev) => [...prev, newDocument]);
-      } catch (error) {
-        console.error("Error while indexing file: ", error);
-        return `${file_data.name}: ${error.message}`;
-      }
+      setDocuments((prev) => [...prev, newDocument]);
+    } catch (error) {
+      console.error("Error while indexing file: ", error);
+      return `${file_data.name}: ${error.message}`;
     }
 
     return null;
@@ -115,19 +85,12 @@ export default function useFileUpload(courseId) {
     }
   }
 
-  async function removeImage(id) {
-    setImages((prev) => prev.filter((img) => img.id !== id));
-  }
-
   return {
     fileInput,
     documents,
     setDocuments,
-    images,
-    setImages,
     handleUpload,
     removeDocument,
-    removeImage,
     error,
     isUploading,
   };

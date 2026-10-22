@@ -94,6 +94,8 @@ class CourseSummary(BaseModel):
 class CourseFileOut(BaseModel):
     id: uuid.UUID
     filename: str
+    media_type: str | None = None  # set for images
+    summary: str | None = None
     created_at: datetime
 
 
@@ -117,6 +119,7 @@ class TopicDetail(BaseModel):
 class AttachmentOut(BaseModel):
     file_uuid: uuid.UUID
     filename: str
+    media_type: str | None = None  # set for images, to show a thumbnail
 
 
 class ChatMessageOut(BaseModel):
@@ -127,17 +130,11 @@ class ChatMessageOut(BaseModel):
     attachments: list[AttachmentOut]
 
 
-class ImageIn(BaseModel):
-    filename: str
-    data: str
-
-
 class MessageCreate(BaseModel):
     content: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=8000)
     ]
     file_uuids: list[uuid.UUID] = []
-    images: list[ImageIn] = []
 
 
 class ChatReply(BaseModel):

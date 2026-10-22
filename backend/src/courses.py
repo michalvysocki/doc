@@ -7,6 +7,7 @@ from sqlalchemy import and_, delete, exists, func, select, true, update
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
+from .file_parsing import ParsedFile
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import (
     OpenRouterError,
@@ -27,6 +28,7 @@ from .schemas import (
 )
 from .vectorstore import (
     add_document,
+    format_course_files,
     format_fragments,
     get_course_document_ids,
     retrieve_chunks,
@@ -306,7 +308,7 @@ def _add_topic_map(
 
 
 def create_course_with_files(
-    initial_prompt: str, files: list[tuple[str, str]]
+    initial_prompt: str, files: list[tuple[str, ParsedFile]]
 ) -> uuid.UUID:
     """
     Creates a course from the prompt and the texts of uploaded files: the files
@@ -331,9 +333,18 @@ def create_course_with_files(
         )
 
     try:
-        for filename, text in files:
-            add_document(text, filename, course_id)
-        materials, file_sources = get_file_materials(course_id, initial_prompt)
+        for filename, parsed in files:
+            add_document(
+                parsed.text,
+                filename,
+                course_id,
+                media_type=parsed.media_type,
+                content=parsed.content,
+                summary=parsed.summary,
+            )
+        materials, file_sources = get_file_materials(
+            course_id, initial_prompt, with_summaries=True
+        )
         topic_map, web_sources = generate_topic_map(initial_prompt, materials)
 
         with SessionLocal() as session, session.begin():
@@ -487,12 +498,12 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
 
 
 def get_file_materials(
-    course_id: uuid.UUID, query: str
+    course_id: uuid.UUID, query: str, with_summaries: bool = False
 ) -> tuple[str | None, list[dict[str, Any]]]:
     """
     Returns fragments of the course's uploaded files relevant to the query,
-    formatted for a prompt (None if there are none), and the files they come
-    from as sources.
+    formatted for a prompt (None if there are none), optionally preceded by the
+    summaries of all files, and the files the fragments come from as sources.
     """
 
     fragments = retrieve_chunks(
@@ -502,9 +513,10 @@ def get_file_materials(
     if not fragments:
         return None, []
     names = dict.fromkeys(fragment["metadata"]["filename"] for fragment in fragments)
-    return format_fragments(fragments), [
-        {"kind": "file", "title": name} for name in names
-    ]
+    sections = [format_fragments(fragments)]
+    if with_summaries and (files := format_course_files(course_id)):
+        sections.insert(0, files)
+    return "\n\n".join(sections), [{"kind": "file", "title": name} for name in names]
 
 
 def merge_sources(*lists: list[dict[str, Any]] | None) -> list[dict[str, Any]]:

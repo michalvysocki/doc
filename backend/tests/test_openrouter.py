@@ -430,3 +430,122 @@ def test_topic_map_request_adds_materials_after_the_prompt(monkeypatch):
     assert sent["messages"][1]["content"] == (
         "Learn Rust\n\nCOURSE MATERIALS:\n--- F ---"
     )
+
+
+def test_image_part_is_a_base64_data_url():
+    assert openrouter.image_part(b"abc", "image/png") == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,YWJj"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"), [("# Notes", "# Notes"), (" (no content) ", None)]
+)
+def test_transcribe_image_sends_the_image(monkeypatch, answer, expected):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": answer}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    result = openrouter.transcribe_image(b"abc", "image/jpeg")
+
+    assert result == expected
+    assert sent["messages"][1]["content"][1] == openrouter.image_part(
+        b"abc", "image/jpeg"
+    )
+    assert "tools" not in sent
+
+
+def test_summarize_conversation_sends_previous_summary_and_messages(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": "- new summary"}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    summary = openrouter.summarize_conversation(
+        "- old",
+        [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}],
+    )
+
+    assert summary == "- new summary"
+    assert sent["messages"][1]["content"] == (
+        "CURRENT SUMMARY:\n- old\n\nNEW MESSAGES:\nUSER: Hi\n\nASSISTANT: Hello"
+    )
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [("  mutable borrowing  ", "mutable borrowing"), ("", "and that?")],
+)
+def test_rewrite_search_query_sends_context(monkeypatch, answer, expected):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": answer}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    query = openrouter.rewrite_search_query(
+        [{"role": "user", "content": "Explain borrowing"}], "and that?", "Borrowing"
+    )
+
+    assert query == expected
+    assert sent["messages"][1]["content"] == (
+        "CURRENT LESSON: Borrowing\n\nRECENT MESSAGES:\nUSER: Explain borrowing"
+        "\n\nLAST MESSAGE:\nand that?"
+    )
+
+
+def test_rewrite_search_query_is_cut_to_the_limit(monkeypatch):
+    monkeypatch.setattr(
+        openrouter,
+        "_post_to_openrouter",
+        lambda url, payload, timeout: {
+            "choices": [{"message": {"content": "x" * 900}}]
+        },
+    )
+
+    query = openrouter.rewrite_search_query([], "q")
+
+    assert len(query) == openrouter.MAX_SEARCH_QUERY_CHARS
+
+
+def test_sample_text_keeps_short_texts_whole():
+    text = "a" * openrouter.MAX_SUMMARY_INPUT_CHARS
+
+    assert openrouter.sample_text(text) == text
+
+
+def test_sample_text_takes_spread_excerpts_of_long_texts():
+    text = "".join(f"{i:07d}" for i in range(100_000))  # 700 000 chars
+
+    sample = openrouter.sample_text(text)
+
+    assert sample.startswith("(Excerpts from a longer document)")
+    assert sample.count("[...]") == openrouter.SUMMARY_SAMPLES - 1
+    assert text[:20] in sample
+    assert text[-20:] in sample
+    assert len(sample) < openrouter.MAX_SUMMARY_INPUT_CHARS + 1_000
+
+
+def test_summarize_document_sends_name_and_text(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": " Notes. Topics: a, b "}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    summary = openrouter.summarize_document("notes.txt", "Hello")
+
+    assert summary == "Notes. Topics: a, b"
+    assert sent["messages"][1]["content"] == "FILE: notes.txt\n\nHello"

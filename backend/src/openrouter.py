@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,45 @@ WEB_SEARCH_TOOL = {
     "type": "openrouter:web_search",
     "parameters": {"max_results": 5, "max_uses": 3},
 }
+
+DOCUMENT_SUMMARY_PROMPT = (
+    "You describe a learner's uploaded file for a study app. Write 2-4 sentences "
+    "about what the file is and what it covers, then a line starting with "
+    "'Topics:' listing its main topics, comma-separated. Use the language of the "
+    "file. Describe only what is in the file."
+)
+MAX_SUMMARY_INPUT_CHARS = 60_000
+SUMMARY_SAMPLES = 12
+SUMMARY_SAMPLE_CHARS = 5_000
+
+SEARCH_QUERY_PROMPT = (
+    "You prepare searches in a learner's course materials. Rewrite the learner's "
+    "last message as a standalone search query: resolve references to earlier "
+    "messages (such as 'it', 'the second point', 'this example') and keep the key "
+    "terms. Write it in the language of the conversation, at most 30 words. If "
+    "the message is already standalone, return it unchanged. Return only the "
+    "query."
+)
+MAX_SEARCH_QUERY_CHARS = 500
+
+SUMMARY_SYSTEM_PROMPT = (
+    "You keep the memory of a tutoring conversation in a study app. Update the "
+    "summary with the new messages: what the learner asked and wanted, what was "
+    "explained, what they struggled with or got wrong, their preferences and "
+    "decisions, and the files or images they mentioned. Use short bullet points, "
+    "at most about 300 words, in the language of the conversation. Return only "
+    "the updated summary."
+)
+
+IMAGE_TRANSCRIPTION_PROMPT = (
+    "You turn an image a learner uploaded (for example a photo of notes, a slide, "
+    "a screenshot or a diagram) into text for a study app. Transcribe all text "
+    "exactly, in its original language, keeping the structure with Markdown "
+    "headings and lists. Write formulas in LaTeX and code in fenced code blocks. "
+    "Briefly describe diagrams, charts and drawings. Do not add explanations of "
+    "your own. If there is nothing to transcribe or describe, answer only with: "
+    "(no content)"
+)
 
 TOPIC_MAP_SYSTEM_PROMPT = (
     "You are an expert teacher designing a course. Based on the user's request, "
@@ -276,6 +316,167 @@ def send_query_with_tools(
         return data["choices"][0]["message"]
     except (KeyError, IndexError) as e:
         raise OpenRouterError("Unexpected response format from OpenRouter") from e
+
+
+def image_part(data: bytes, media_type: str) -> dict[str, Any]:
+    """Returns an image as a message content part (a base64 data URL)."""
+
+    encoded = base64.b64encode(data).decode()
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+    }
+
+
+def transcribe_image(data: bytes, media_type: str) -> str | None:
+    """
+    Turns an uploaded image into Markdown text for RAG.
+
+    Returns:
+        str | None: the transcription, or None if the image has no content
+
+    Raises:
+        OpenRouterError: if the model request fails
+    """
+
+    response = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": IMAGE_TRANSCRIPTION_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Transcribe this image."},
+                        image_part(data, media_type),
+                    ],
+                },
+            ],
+        },
+        timeout=120,
+    )
+    try:
+        content = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+
+    if not content or content.strip() == "(no content)":
+        return None
+    return content
+
+
+def sample_text(text: str) -> str:
+    """Returns the whole text if short, or evenly spaced excerpts of a long one."""
+
+    if len(text) <= MAX_SUMMARY_INPUT_CHARS:
+        return text
+    last_start = len(text) - SUMMARY_SAMPLE_CHARS
+    starts = [
+        round(i * last_start / (SUMMARY_SAMPLES - 1)) for i in range(SUMMARY_SAMPLES)
+    ]
+    excerpts = [text[start : start + SUMMARY_SAMPLE_CHARS] for start in starts]
+    return "(Excerpts from a longer document)\n\n" + "\n\n[...]\n\n".join(excerpts)
+
+
+def summarize_document(filename: str, text: str) -> str:
+    """
+    Describes an uploaded file in a few sentences with its main topics. Long
+    files are described from evenly spaced excerpts.
+
+    Raises:
+        OpenRouterError: if the request fails or the summary is empty
+    """
+
+    response = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": DOCUMENT_SUMMARY_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"FILE: {filename}\n\n{sample_text(text)}",
+                },
+            ],
+        },
+        timeout=120,
+    )
+    try:
+        summary = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+    if not summary or not summary.strip():
+        raise OpenRouterError("Model returned an empty file summary")
+    return summary.strip()
+
+
+def rewrite_search_query(
+    recent: list[dict[str, str]], question: str, topic: str | None = None
+) -> str:
+    """
+    Turns the learner's message into a standalone query for RAG, using the
+    recent messages (dicts with role and content) to resolve references.
+
+    Raises:
+        OpenRouterError: if the request fails
+    """
+
+    transcript = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in recent)
+    context = (f"CURRENT LESSON: {topic}\n\n" if topic else "") + (
+        f"RECENT MESSAGES:\n{transcript}\n\nLAST MESSAGE:\n{question}"
+    )
+    response = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": SEARCH_QUERY_PROMPT},
+                {"role": "user", "content": context},
+            ],
+        },
+        timeout=30,
+    )
+    try:
+        content = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+
+    query = (content or "").strip()[:MAX_SEARCH_QUERY_CHARS]
+    return query or question
+
+
+def summarize_conversation(previous: str | None, messages: list[dict[str, str]]) -> str:
+    """
+    Folds older messages (dicts with role and content) into the conversation
+    summary.
+
+    Raises:
+        OpenRouterError: if the request fails or the summary is empty
+    """
+
+    transcript = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
+    context = (
+        f"CURRENT SUMMARY:\n{previous or '(none yet)'}\n\nNEW MESSAGES:\n{transcript}"
+    )
+    response = _post_to_openrouter(
+        URL,
+        {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": context},
+            ],
+        },
+        timeout=120,
+    )
+    try:
+        summary = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+    if not summary:
+        raise OpenRouterError("Model returned an empty summary")
+    return summary
 
 
 def get_embeddings(texts: list[str]) -> list[list[float]]:

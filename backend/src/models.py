@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    LargeBinary,
     MetaData,
     String,
     Text,
@@ -109,6 +110,10 @@ class Conversation(Base):
     topic_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("topics.id", ondelete="CASCADE"), unique=True
     )
+    # Summary of the older messages sent to the model instead of them, and the
+    # id of the last message it covers.
+    summary: Mapped[str | None] = mapped_column(Text)
+    summary_until_id: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -186,6 +191,12 @@ class Document(Base):
         ForeignKey("topics.id", ondelete="CASCADE"), unique=True
     )
     filename: Mapped[str] = mapped_column(String(255))
+    # Only for uploaded images: the original image, shown in the UI and sent
+    # to the model; its text (transcription) is stored as chunks like any file.
+    media_type: Mapped[str | None] = mapped_column(String(64))
+    # Only for uploaded files: a short description of the whole file.
+    summary: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

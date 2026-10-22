@@ -23,7 +23,13 @@ class DocumentTooLargeError(Exception):
 
 
 def add_document(
-    text: str, filename: str, course_id: uuid.UUID, topic_id: uuid.UUID | None = None
+    text: str,
+    filename: str,
+    course_id: uuid.UUID,
+    topic_id: uuid.UUID | None = None,
+    media_type: str | None = None,
+    content: bytes | None = None,
+    summary: str | None = None,
 ) -> str:
     """
     Divides text into chunks, generates embeddings and saves
@@ -34,6 +40,9 @@ def add_document(
         filename (str): file's name
         course_id (uuid.UUID): course the document belongs to
         topic_id (uuid.UUID | None): topic, if the document is a generated lesson
+        media_type (str | None): for images, their media type
+        content (bytes | None): for images, the original image
+        summary (str | None): for uploaded files, a short description
 
     Returns:
         str: returns document's uuid
@@ -54,6 +63,9 @@ def add_document(
         course_id=course_id,
         topic_id=topic_id,
         filename=filename,
+        media_type=media_type,
+        content=content,
+        summary=summary,
         chunks=[
             Chunk(chunk_index=i, text=chunk, embedding=embedding)
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True))
@@ -126,14 +138,71 @@ def list_course_files(course_id: uuid.UUID) -> list[CourseFileOut]:
 
     with SessionLocal() as session:
         rows = session.execute(
-            select(Document.id, Document.filename, Document.created_at)
+            select(
+                Document.id,
+                Document.filename,
+                Document.media_type,
+                Document.summary,
+                Document.created_at,
+            )
             .where(Document.course_id == course_id, Document.topic_id.is_(None))
             .order_by(Document.created_at)
         ).all()
     return [
-        CourseFileOut(id=row.id, filename=row.filename, created_at=row.created_at)
+        CourseFileOut(
+            id=row.id,
+            filename=row.filename,
+            media_type=row.media_type,
+            summary=row.summary,
+            created_at=row.created_at,
+        )
         for row in rows
     ]
+
+
+def get_image(file_uuid: uuid.UUID) -> tuple[bytes, str] | None:
+    """
+    Returns the bytes and media type of an uploaded image, or None if the
+    document does not exist or is not an image.
+    """
+
+    with SessionLocal() as session:
+        row = session.execute(
+            select(Document.content, Document.media_type).where(
+                Document.id == file_uuid, Document.content.is_not(None)
+            )
+        ).first()
+    return (row.content, row.media_type) if row else None
+
+
+MAX_FILES_IN_CONTEXT = 20
+MAX_SUMMARY_CHARS_IN_CONTEXT = 600
+
+
+def format_course_files(course_id: uuid.UUID) -> str | None:
+    """
+    Formats the summaries of the course's uploaded files as a prompt section,
+    or returns None if no file has a summary.
+    """
+
+    with SessionLocal() as session:
+        rows = session.execute(
+            select(Document.filename, Document.summary)
+            .where(
+                Document.course_id == course_id,
+                Document.topic_id.is_(None),
+                Document.summary.is_not(None),
+            )
+            .order_by(Document.created_at)
+            .limit(MAX_FILES_IN_CONTEXT)
+        ).all()
+    if not rows:
+        return None
+    lines = [
+        f"- {row.filename}: {row.summary[:MAX_SUMMARY_CHARS_IN_CONTEXT]}"
+        for row in rows
+    ]
+    return "COURSE FILES:\n" + "\n".join(lines)
 
 
 def format_fragments(fragments: list[dict[str, Any]]) -> str:

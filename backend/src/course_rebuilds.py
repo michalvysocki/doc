@@ -96,7 +96,9 @@ def propose_course_rebuild(
 
     materials, file_sources = (
         get_file_materials(
-            course_id, f"{course.title}\n{course.initial_prompt}\n{instructions or ''}"
+            course_id,
+            f"{course.title}\n{course.initial_prompt}\n{instructions or ''}",
+            with_summaries=True,
         )
         if use_files
         else (None, [])

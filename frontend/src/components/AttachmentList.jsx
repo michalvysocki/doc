@@ -1,25 +1,17 @@
-import { FileText, X } from "lucide-react";
 import AttachmentCard from "./AttachmentCard";
 import getFileLabel from "../utils/fileLabel";
+import { fileContentUrl } from "../utils/api";
 
-function AttachmentList({ documents, images, removeDocument, removeImage }) {
+function AttachmentList({ documents, removeDocument }) {
   return (
     <div className="flex gap-2 overflow-x-auto px-4 pb-2 pt-2">
       {documents.map((doc) => (
         <AttachmentCard
           key={doc.file_uuid}
           name={doc.filename}
+          thumbnail={doc.media_type ? fileContentUrl(doc.file_uuid) : null}
           typeLabel={getFileLabel(doc.type)}
           onRemove={() => removeDocument(doc.file_uuid)}
-        />
-      ))}
-
-      {images.map((img) => (
-        <AttachmentCard
-          key={img.id}
-          name={img.filename}
-          thumbnail={img.data}
-          onRemove={() => removeImage(img.id)}
         />
       ))}
     </div>

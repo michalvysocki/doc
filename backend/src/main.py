@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -34,7 +34,7 @@ from .courses import (
 from .file_parsing import (
     FileParsingError,
     FileTooLargeError,
-    extract_text,
+    prepare_upload,
     read_upload,
 )
 from .openrouter import OpenRouterError, generate_topic_map
@@ -76,6 +76,7 @@ from .vectorstore import (
     DocumentTooLargeError,
     add_document,
     delete_document,
+    get_image,
     list_course_files,
 )
 
@@ -98,20 +99,39 @@ def parse_file(file: UploadFile, course_id: Annotated[uuid.UUID, Form()]):
         raise HTTPException(status_code=404, detail="Course not found")
 
     try:
-        text_content = extract_text(file.filename, file.content_type, read_upload(file))
+        parsed = prepare_upload(file.filename, file.content_type, read_upload(file))
     except FileTooLargeError as e:
         raise HTTPException(status_code=413, detail=str(e)) from e
     except FileParsingError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
     try:
-        file_uuid = add_document(text_content, file.filename, course_id)
+        file_uuid = add_document(
+            parsed.text,
+            file.filename,
+            course_id,
+            media_type=parsed.media_type,
+            content=parsed.content,
+            summary=parsed.summary,
+        )
     except DocumentTooLargeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     return {"filename": file.filename, "file_uuid": file_uuid}
+
+
+@app.get("/files/{file_uuid}/content")
+def read_file_content(file_uuid: uuid.UUID):
+    image = get_image(file_uuid)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    content, media_type = image
+    return Response(content=content, media_type=media_type)
 
 
 @app.delete("/delete_file/{file_uuid}", status_code=204)
@@ -148,10 +168,12 @@ def create_course(
     texts = []
     for file in files:
         try:
-            text = extract_text(file.filename, file.content_type, read_upload(file))
+            parsed = prepare_upload(file.filename, file.content_type, read_upload(file))
         except FileParsingError as e:
             raise HTTPException(status_code=400, detail=f"{file.filename}: {e}") from e
-        texts.append((file.filename, text))
+        except OpenRouterError as e:
+            raise HTTPException(status_code=502, detail=f"{file.filename}: {e}") from e
+        texts.append((file.filename, parsed))
 
     try:
         if texts:
@@ -232,9 +254,7 @@ def read_topic_messages(topic_id: uuid.UUID):
 @app.post("/topics/{topic_id}/messages", status_code=201, response_model=ChatReply)
 def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
     try:
-        reply = send_topic_message(
-            topic_id, request.content, request.file_uuids, request.images
-        )
+        reply = send_topic_message(topic_id, request.content, request.file_uuids)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
@@ -313,9 +333,7 @@ def read_course_messages(course_id: uuid.UUID):
 @app.post("/courses/{course_id}/messages", status_code=201, response_model=ChatReply)
 def post_course_message(course_id: uuid.UUID, request: MessageCreate):
     try:
-        reply = send_course_message(
-            course_id, request.content, request.file_uuids, request.images
-        )
+        reply = send_course_message(course_id, request.content, request.file_uuids)
     except OpenRouterError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

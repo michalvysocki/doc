@@ -8,8 +8,8 @@ function toViewMessage(message) {
     documents: message.attachments.map((attachment) => ({
       file_uuid: attachment.file_uuid,
       filename: attachment.filename,
+      media_type: attachment.media_type,
     })),
-    images: message.images ?? [],
   };
 }
 
@@ -57,20 +57,19 @@ export default function usePersistentChat(
 
   async function handleSend() {
     const sendingPath = path;
-    const { documents, images } = fileUpload;
+    const { documents } = fileUpload;
     const pending = {
       role: "user",
       content: userInput,
-      attachments: documents.map(({ file_uuid, filename }) => ({
+      attachments: documents.map(({ file_uuid, filename, media_type }) => ({
         file_uuid,
         filename,
+        media_type,
       })),
-      images,
     };
 
     setUserInput("");
     fileUpload.setDocuments([]);
-    fileUpload.setImages([]);
     updateChat(sendingPath, (prev) => ({
       ...prev,
       messages: [...prev.messages, pending],
@@ -85,7 +84,6 @@ export default function usePersistentChat(
         body: JSON.stringify({
           content: pending.content,
           file_uuids: documents.map((document) => document.file_uuid),
-          images: images.map(({ filename, data }) => ({ filename, data })),
         }),
       });
       updateChat(sendingPath, (prev) => ({

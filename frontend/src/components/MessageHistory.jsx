@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import AttachmentCard from "./AttachmentCard";
 import MarkdownContent from "./MarkdownContent";
 import getFileLabel, { getFileLabelFromName } from "../utils/fileLabel";
+import { fileContentUrl } from "../utils/api";
 
 function MessageHistory({ messageHistory, isLoading }) {
   const containerRef = useRef(null);
@@ -28,18 +29,14 @@ function MessageHistory({ messageHistory, isLoading }) {
                 <AttachmentCard
                   key={doc.file_uuid}
                   name={doc.filename}
+                  thumbnail={
+                    doc.media_type ? fileContentUrl(doc.file_uuid) : null
+                  }
                   typeLabel={
                     doc.type
                       ? getFileLabel(doc.type)
                       : getFileLabelFromName(doc.filename)
                   }
-                />
-              ))}
-              {message.images.map((img) => (
-                <AttachmentCard
-                  key={img.id}
-                  name={img.filename}
-                  thumbnail={img.data}
                 />
               ))}
             </div>

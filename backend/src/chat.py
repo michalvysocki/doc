@@ -1,3 +1,5 @@
+import logging
+import os
 import uuid
 from collections import defaultdict
 from collections.abc import Callable
@@ -15,8 +17,11 @@ from .openrouter import (
     TOPIC_CHAT_SYSTEM_PROMPT,
     OpenRouterError,
     append_sources,
+    image_part,
+    rewrite_search_query,
     send_query,
     send_query_with_tools,
+    summarize_conversation,
 )
 from .outline import format_course_outline, format_outline_with_progress
 from .schemas import (
@@ -24,14 +29,29 @@ from .schemas import (
     ChatMessageOut,
     ChatReply,
     CourseOut,
-    ImageIn,
     TaskOut,
     TopicDetail,
 )
 from .tasks import get_tasks
-from .vectorstore import format_fragments, get_course_document_ids, retrieve_chunks
+from .vectorstore import (
+    format_course_files,
+    format_fragments,
+    get_course_document_ids,
+    get_image,
+    retrieve_chunks,
+)
+
+logger = logging.getLogger(__name__)
 
 HISTORY_LIMIT = 20
+SUMMARY_BATCH = 10
+MAX_HISTORY_MESSAGES = HISTORY_LIMIT + SUMMARY_BATCH
+SEARCH_CONTEXT_MESSAGES = 6
+CONTEXT_BUDGET_TOKENS = int(os.getenv("CONTEXT_BUDGET_TOKENS", "60000"))
+CHARS_PER_TOKEN = 3
+IMAGE_TOKENS = 1500
+MAX_LESSON_CHARS_IN_CONTEXT = 40_000
+MAX_OUTLINE_CHARS_IN_CONTEXT = 20_000
 MAX_TOOL_ROUNDS = 3
 MAX_CHARS_IN_TASK_CONTEXT = 1500
 
@@ -91,13 +111,20 @@ def _list_messages(condition) -> list[ChatMessageOut]:
         message_ids = [message.id for message in messages]
         if message_ids:
             documents = session.execute(
-                select(Document.id, Document.filename, Document.message_id).where(
-                    Document.message_id.in_(message_ids)
-                )
+                select(
+                    Document.id,
+                    Document.filename,
+                    Document.media_type,
+                    Document.message_id,
+                ).where(Document.message_id.in_(message_ids))
             ).all()
             for document in documents:
                 attachments[document.message_id].append(
-                    AttachmentOut(file_uuid=document.id, filename=document.filename)
+                    AttachmentOut(
+                        file_uuid=document.id,
+                        filename=document.filename,
+                        media_type=document.media_type,
+                    )
                 )
 
         return [
@@ -160,7 +187,7 @@ def add_message(
             )
 
         documents = session.execute(
-            select(Document.id, Document.filename).where(
+            select(Document.id, Document.filename, Document.media_type).where(
                 Document.message_id == message.id
             )
         ).all()
@@ -171,7 +198,10 @@ def add_message(
             content=message.content,
             created_at=message.created_at,
             attachments=[
-                AttachmentOut(file_uuid=d.id, filename=d.filename) for d in documents
+                AttachmentOut(
+                    file_uuid=d.id, filename=d.filename, media_type=d.media_type
+                )
+                for d in documents
             ],
         )
 
@@ -204,9 +234,134 @@ def format_tasks_for_chat(tasks: list[TaskOut]) -> str:
     return "\n".join(lines)
 
 
-def _history_messages(history: list[ChatMessageOut]) -> list[dict]:
+def _cap(text: str, limit: int) -> str:
+    """Cuts a prompt section to the limit, marking that it was cut."""
+
+    return text if len(text) <= limit else text[:limit] + "\n[...truncated]"
+
+
+def estimate_tokens(messages: list[dict[str, Any]]) -> int:
+    """
+    Roughly estimates the prompt size: text length / CHARS_PER_TOKEN, plus a
+    fixed cost per image.
+    """
+
+    total = 0
+    for message in messages:
+        content = message["content"]
+        parts = (
+            content
+            if isinstance(content, list)
+            else [{"type": "text", "text": content}]
+        )
+        for part in parts:
+            if part["type"] == "text":
+                total += len(part["text"]) // CHARS_PER_TOKEN
+            else:
+                total += IMAGE_TOKENS
+    return total
+
+
+def fit_to_budget(
+    messages: list[dict[str, Any]], budget: int | None = None
+) -> list[dict[str, Any]]:
+    """
+    Drops the oldest history messages until the prompt fits the budget, always
+    keeping the system prompt and the learner's last message.
+    """
+
+    budget = CONTEXT_BUDGET_TOKENS if budget is None else budget
+    system, history = messages[0], messages[1:]
+    while len(history) > 1 and estimate_tokens([system, *history]) > budget:
+        history = history[1:]
+    dropped = len(messages) - 1 - len(history)
+    if dropped:
+        logger.info("Dropped %d old messages to fit the context budget", dropped)
+    return [system, *history]
+
+
+def _search_query(history: list[ChatMessageOut], topic: str | None = None) -> str:
+    """
+    Returns the query for RAG: the learner's last message rewritten with the
+    recent conversation, or the message itself if there is nothing before it
+    or rewriting fails.
+    """
+
+    question = history[-1].content
+    recent = history[:-1][-SEARCH_CONTEXT_MESSAGES:]
+    if not recent:
+        return question
+    try:
+        return rewrite_search_query(
+            _history_messages(recent, limit=None), question, topic
+        )
+    except OpenRouterError:
+        logger.warning("Could not rewrite the search query", exc_info=True)
+        return question
+
+
+def split_for_summary(
+    messages: list[ChatMessageOut],
+    limit: int = HISTORY_LIMIT,
+    batch: int = SUMMARY_BATCH,
+) -> tuple[list[ChatMessageOut], list[ChatMessageOut]]:
+    """
+    Returns (to_summarize, to_keep): when there are more than limit + batch
+    messages, all but the last `limit` go into the summary.
+    """
+
+    if len(messages) <= limit + batch:
+        return [], messages
+    return messages[:-limit], messages[-limit:]
+
+
+def _conversation_window(
+    conversation_id: uuid.UUID,
+) -> tuple[str | None, list[ChatMessageOut]]:
+    """
+    Returns the conversation summary and the messages after it, first folding
+    older messages into the summary when there are too many. If summarizing
+    fails, the window simply stays longer until the next message.
+    """
+
+    with SessionLocal() as session:
+        conversation = session.get(Conversation, conversation_id)
+        summary = conversation.summary
+        summary_until_id = conversation.summary_until_id
+
+    condition = ChatMessage.conversation_id == conversation_id
+    if summary_until_id is not None:
+        condition = and_(condition, ChatMessage.id > summary_until_id)
+    messages = _list_messages(condition)
+
+    to_summarize, to_keep = split_for_summary(messages)
+    if not to_summarize:
+        return summary, messages
+
+    try:
+        summary = summarize_conversation(
+            summary, _history_messages(to_summarize, limit=None)
+        )
+    except OpenRouterError:
+        logger.warning(
+            "Could not summarize conversation %s", conversation_id, exc_info=True
+        )
+        return summary, messages
+
+    with SessionLocal() as session, session.begin():
+        session.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(summary=summary, summary_until_id=to_summarize[-1].id)
+        )
+    return summary, to_keep
+
+
+def _history_messages(
+    history: list[ChatMessageOut], limit: int | None = MAX_HISTORY_MESSAGES
+) -> list[dict]:
     messages = []
-    for message in history[-HISTORY_LIMIT:]:
+    for message in history if limit is None else history[-limit:]:
         content = message.content
         if message.attachments:
             names = ", ".join(a.filename for a in message.attachments)
@@ -222,6 +377,8 @@ def build_topic_chat_messages(
     history: list[ChatMessageOut],
     tasks: list[TaskOut],
     goal: str | None = None,
+    summary: str | None = None,
+    course_files: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -237,11 +394,16 @@ def build_topic_chat_messages(
         TOPIC_CHAT_SYSTEM_PROMPT,
         f"COURSE: {topic.course_title}",
         *([f"LEARNER'S GOAL: {goal}"] if goal else []),
-        f"COURSE OUTLINE:\n{outline}",
-        f"CURRENT LESSON: {path}\n{topic.description}\n\n{lesson}",
+        f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
+        f"CURRENT LESSON: {path}\n{topic.description}\n\n"
+        + _cap(lesson, MAX_LESSON_CHARS_IN_CONTEXT),
         f"SUBTOPICS OF THIS LESSON (lesson level {level} of max 3):\n"
         + (subtopics or "(none)"),
     ]
+    if course_files:
+        sections.append(course_files)
+    if summary:
+        sections.append(f"EARLIER CONVERSATION (summary):\n{summary}")
     if fragments:
         sections.append(format_fragments(fragments))
     if tasks:
@@ -258,6 +420,8 @@ def build_course_chat_messages(
     outline: str,
     fragments: list[dict],
     history: list[ChatMessageOut],
+    summary: str | None = None,
+    course_files: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course goal,
@@ -271,8 +435,12 @@ def build_course_chat_messages(
         f"COURSE: {course.title}",
         f"LEARNER'S GOAL: {course.initial_prompt}",
         f"PROGRESS: {completed} topics completed",
-        f"COURSE OUTLINE:\n{outline}",
+        f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
     ]
+    if course_files:
+        sections.append(course_files)
+    if summary:
+        sections.append(f"EARLIER CONVERSATION (summary):\n{summary}")
     if fragments:
         sections.append(format_fragments(fragments))
 
@@ -326,8 +494,7 @@ def _exchange(
     conversation_id: uuid.UUID,
     content: str,
     file_uuids: list[uuid.UUID],
-    images: list[ImageIn],
-    build_messages: Callable[[list[ChatMessageOut]], list[dict[str, Any]]],
+    build_messages: Callable[[list[ChatMessageOut], str | None], list[dict[str, Any]]],
     tools: list[dict[str, Any]] | None = None,
     run_tool: ToolRunner | None = None,
 ) -> ChatReply:
@@ -340,20 +507,22 @@ def _exchange(
             message stays saved
     """
 
-    stored_content = content + "".join(f"\n\n[Image: {i.filename}]" for i in images)
-    user_message = add_message(conversation_id, "user", stored_content, file_uuids)
+    user_message = add_message(conversation_id, "user", content, file_uuids)
 
-    history = _list_messages(ChatMessage.conversation_id == conversation_id)
-    messages = build_messages(history)
+    summary, history = _conversation_window(conversation_id)
+    messages = build_messages(history, summary)
 
-    if images:
+    image_parts = [
+        image_part(*image)
+        for attachment in user_message.attachments
+        if attachment.media_type and (image := get_image(attachment.file_uuid))
+    ]
+    if image_parts:
         messages[-1]["content"] = [
             {"type": "text", "text": messages[-1]["content"]},
-            *(
-                {"type": "file", "file": {"filename": i.filename, "file_data": i.data}}
-                for i in images
-            ),
+            *image_parts,
         ]
+    messages = fit_to_budget(messages)
 
     if tools:
         reply, changed = _ask_with_tools(messages, tools, run_tool)
@@ -401,7 +570,6 @@ def send_topic_message(
     topic_id: uuid.UUID,
     content: str,
     file_uuids: list[uuid.UUID],
-    images: list[ImageIn],
 ) -> ChatReply | None:
     """
     Sends a message in the topic's conversation, with the lesson as context.
@@ -422,22 +590,30 @@ def send_topic_message(
     outline = format_course_outline(course.topics, topic.id)
     tasks = get_tasks(topic_id)
 
-    def build(history: list[ChatMessageOut]) -> list[dict[str, Any]]:
+    def build(
+        history: list[ChatMessageOut], summary: str | None
+    ) -> list[dict[str, Any]]:
         fragments = retrieve_chunks(
-            query=content,
+            query=_search_query(history, topic=topic.title),
             file_uuids=get_course_document_ids(
                 topic.course_id, exclude_topic_id=topic_id
             ),
         )
         return build_topic_chat_messages(
-            topic, outline, fragments, history, tasks, goal=course.initial_prompt
+            topic,
+            outline,
+            fragments,
+            history,
+            tasks,
+            goal=course.initial_prompt,
+            summary=summary,
+            course_files=format_course_files(topic.course_id),
         )
 
     return _exchange(
         get_or_create_conversation(topic.course_id, topic_id),
         content,
         file_uuids,
-        images,
         build,
         tools=TOPIC_TOOLS,
         run_tool=lambda name, arguments: run_topic_tool(
@@ -450,7 +626,6 @@ def send_course_message(
     course_id: uuid.UUID,
     content: str,
     file_uuids: list[uuid.UUID],
-    images: list[ImageIn],
 ) -> ChatReply | None:
     """
     Sends a message in the course conversation, with the outline and progress
@@ -472,17 +647,25 @@ def send_course_message(
         course.topics, include_ids=True, include_descriptions=True
     )
 
-    def build(history: list[ChatMessageOut]) -> list[dict[str, Any]]:
+    def build(
+        history: list[ChatMessageOut], summary: str | None
+    ) -> list[dict[str, Any]]:
         fragments = retrieve_chunks(
-            query=content, file_uuids=get_course_document_ids(course_id)
+            query=_search_query(history), file_uuids=get_course_document_ids(course_id)
         )
-        return build_course_chat_messages(course, outline, fragments, history)
+        return build_course_chat_messages(
+            course,
+            outline,
+            fragments,
+            history,
+            summary=summary,
+            course_files=format_course_files(course_id),
+        )
 
     return _exchange(
         get_or_create_conversation(course_id),
         content,
         file_uuids,
-        images,
         build,
         tools=COURSE_TOOLS,
         run_tool=lambda name, arguments: run_course_tool(course_id, name, arguments),

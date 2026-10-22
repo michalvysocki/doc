@@ -1,12 +1,19 @@
 import io
+import logging
 import os
 import tempfile
+from typing import NamedTuple
 
 from fastapi import UploadFile
 from llama_index.core import SimpleDirectoryReader
 from markitdown import MarkItDown
 
+from .openrouter import OpenRouterError, summarize_document, transcribe_image
+
+logger = logging.getLogger(__name__)
+
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 md = MarkItDown()
 
@@ -89,3 +96,43 @@ def extract_text(filename: str, content_type: str | None, data: bytes) -> str:
         raise FileParsingError("Empty file or no readable text found")
 
     return text
+
+
+class ParsedFile(NamedTuple):
+    text: str
+    media_type: str | None = None  # only for images
+    content: bytes | None = None  # only for images
+    summary: str | None = None
+
+
+def prepare_upload(filename: str, content_type: str | None, data: bytes) -> ParsedFile:
+    """
+    Turns an uploaded file into text for RAG: documents are parsed, images are
+    transcribed by the model and kept with their original bytes. Every file
+    also gets a short summary, if the model manages to write one.
+
+    Raises:
+        FileParsingError: for unsupported or empty files
+        OpenRouterError: if transcribing an image fails
+    """
+
+    if (content_type or "").startswith("image/"):
+        if content_type not in IMAGE_TYPES:
+            raise FileParsingError("Unsupported image type (use PNG, JPEG or WEBP)")
+        text = transcribe_image(data, content_type)
+        if text is None:
+            raise FileParsingError("No readable content found in the image")
+        return ParsedFile(text, content_type, data, _summary(filename, text))
+
+    text = extract_text(filename, content_type, data)
+    return ParsedFile(text, summary=_summary(filename, text))
+
+
+def _summary(filename: str, text: str) -> str | None:
+    """Returns the file summary, or None if summarizing fails (it is optional)."""
+
+    try:
+        return summarize_document(filename, text)
+    except OpenRouterError:
+        logger.warning("Could not summarize file %s", filename, exc_info=True)
+        return None

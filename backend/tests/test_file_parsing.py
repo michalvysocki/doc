@@ -40,3 +40,54 @@ def test_read_upload_returns_small_files(monkeypatch):
     upload = type("Upload", (), {"file": io.BytesIO(b"x" * 10)})()
 
     assert file_parsing.read_upload(upload) == b"x" * 10
+
+
+def test_prepare_upload_transcribes_images_and_keeps_bytes(monkeypatch):
+    received = {}
+
+    def fake_transcribe(data, media_type):
+        received.update(data=data, media_type=media_type)
+        return "# Notes"
+
+    monkeypatch.setattr(file_parsing, "transcribe_image", fake_transcribe)
+    monkeypatch.setattr(file_parsing, "summarize_document", lambda name, text: "S")
+
+    parsed = file_parsing.prepare_upload("notes.png", "image/png", b"PNG")
+
+    assert parsed == file_parsing.ParsedFile("# Notes", "image/png", b"PNG", "S")
+    assert received == {"data": b"PNG", "media_type": "image/png"}
+
+
+def test_prepare_upload_rejects_unsupported_images(monkeypatch):
+    monkeypatch.setattr(file_parsing, "transcribe_image", lambda *args: "text")
+
+    with pytest.raises(FileParsingError, match="Unsupported image type"):
+        file_parsing.prepare_upload("anim.gif", "image/gif", b"GIF")
+
+
+def test_prepare_upload_rejects_images_without_content(monkeypatch):
+    monkeypatch.setattr(file_parsing, "transcribe_image", lambda *args: None)
+
+    with pytest.raises(FileParsingError, match="No readable content"):
+        file_parsing.prepare_upload("floor.jpg", "image/jpeg", b"JPG")
+
+
+def test_prepare_upload_parses_documents_without_bytes(monkeypatch):
+    monkeypatch.setattr(
+        file_parsing, "summarize_document", lambda name, text: f"About {name}"
+    )
+
+    parsed = file_parsing.prepare_upload("notes.txt", "text/plain", b"Hello")
+
+    assert parsed == file_parsing.ParsedFile("Hello", summary="About notes.txt")
+
+
+def test_prepare_upload_keeps_the_file_when_summarizing_fails(monkeypatch):
+    def fail(name, text):
+        raise file_parsing.OpenRouterError("timeout")
+
+    monkeypatch.setattr(file_parsing, "summarize_document", fail)
+
+    parsed = file_parsing.prepare_upload("notes.txt", "text/plain", b"Hello")
+
+    assert parsed == file_parsing.ParsedFile("Hello")

@@ -3,7 +3,8 @@ import AttachmentCard from "./AttachmentCard";
 import FileInput from "./FileInput";
 import getFileLabel from "../utils/fileLabel";
 import {
-  DOCUMENT_TYPES,
+  ACCEPTED_TYPES,
+  IMAGE_TYPES,
   MAX_COURSE_FILES,
   MAX_UPLOAD_BYTES,
 } from "../utils/uploadLimits";
@@ -22,8 +23,10 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
     const errors = [];
     const accepted = [...files];
     for (const file of picked) {
-      if (file.type.startsWith("image/")) {
-        errors.push(`${file.name}: images are not supported here`);
+      if (file.type.startsWith("image/") && !IMAGE_TYPES.includes(file.type)) {
+        errors.push(
+          `${file.name}: unsupported image type (use PNG, JPEG or WEBP)`,
+        );
       } else if (file.size > MAX_UPLOAD_BYTES) {
         errors.push(`${file.name}: the file is too large (max 20 MB)`);
       } else if (
@@ -86,7 +89,7 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
             <FileInput
               inputRef={fileInput}
               onChange={handlePick}
-              accept={DOCUMENT_TYPES}
+              accept={ACCEPTED_TYPES}
             />
           )}
           <span className="text-xs text-ink/60">

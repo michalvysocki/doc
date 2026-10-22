@@ -1,4 +1,6 @@
 export function getFileLabel(mimeType) {
+  if (mimeType.startsWith("image/"))
+    return mimeType.split("/")[1].toUpperCase();
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType.includes("wordprocessingml")) return "DOCX";
   if (mimeType.includes("spreadsheetml")) return "XLSX";

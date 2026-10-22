@@ -1,14 +1,18 @@
 import uuid
 from datetime import UTC, datetime
 
+import pytest
+
+from src import chat
 from src.chat import (
-    HISTORY_LIMIT,
     MAX_CHARS_IN_TASK_CONTEXT,
+    MAX_HISTORY_MESSAGES,
     build_course_chat_messages,
     build_topic_chat_messages,
     format_course_outline,
     format_outline_with_progress,
     format_tasks_for_chat,
+    split_for_summary,
 )
 from src.schemas import (
     AttachmentOut,
@@ -122,14 +126,14 @@ def test_fragments_section_only_when_fragments_exist():
 def test_history_is_limited_to_the_most_recent_messages():
     history = [
         make_message(i, "user" if i % 2 else "assistant", f"message {i}")
-        for i in range(1, 26)
+        for i in range(1, 36)
     ]
 
     messages = build_topic_chat_messages(make_topic_detail(), "", [], history, [])
 
-    assert len(messages) == 1 + HISTORY_LIMIT
+    assert len(messages) == 1 + MAX_HISTORY_MESSAGES
     assert messages[1]["content"] == "message 6"
-    assert messages[-1]["content"] == "message 25"
+    assert messages[-1]["content"] == "message 35"
 
 
 def test_attachments_are_mentioned_in_message_content():
@@ -275,7 +279,7 @@ def test_course_chat_system_prompt_contains_goal_progress_and_outline():
 
 
 def test_course_chat_includes_fragments_and_limited_history():
-    history = [make_message(i, "user", f"message {i}") for i in range(1, 26)]
+    history = [make_message(i, "user", f"message {i}") for i in range(1, 36)]
     fragments = [{"text": "chunk", "metadata": {"filename": "notes.pdf"}}]
 
     messages = build_course_chat_messages(make_course([]), "", fragments, history)
@@ -283,8 +287,8 @@ def test_course_chat_includes_fragments_and_limited_history():
     assert (
         "--- Fragment of the document: notes.pdf ---\nchunk" in messages[0]["content"]
     )
-    assert len(messages) == 1 + HISTORY_LIMIT
-    assert messages[-1]["content"] == "message 25"
+    assert len(messages) == 1 + MAX_HISTORY_MESSAGES
+    assert messages[-1]["content"] == "message 35"
 
 
 def test_fragments_are_labelled_as_lesson_or_document():
@@ -334,3 +338,139 @@ def test_outline_can_include_descriptions():
     assert outline == (
         "- Basics: Basics description\n  - Borrowing: Borrowing description"
     )
+
+
+def test_split_for_summary_keeps_short_conversations_whole():
+    messages = [make_message(i, "user", f"m{i}") for i in range(1, 31)]
+
+    assert split_for_summary(messages) == ([], messages)
+
+
+def test_split_for_summary_folds_all_but_the_last_twenty():
+    messages = [make_message(i, "user", f"m{i}") for i in range(1, 32)]
+
+    to_summarize, to_keep = split_for_summary(messages)
+
+    assert [m.id for m in to_summarize] == list(range(1, 12))
+    assert [m.id for m in to_keep] == list(range(12, 32))
+
+
+def test_summary_section_only_when_summary_exists():
+    without = build_topic_chat_messages(make_topic_detail(), "", [], [], [])
+    with_summary = build_course_chat_messages(
+        make_course([]), "", [], [], summary="- asked about borrowing"
+    )
+
+    assert "EARLIER CONVERSATION" not in without[0]["content"]
+    assert (
+        "EARLIER CONVERSATION (summary):\n- asked about borrowing"
+        in with_summary[0]["content"]
+    )
+
+
+def test_search_query_of_the_first_message_is_the_message(monkeypatch):
+    monkeypatch.setattr(
+        chat, "rewrite_search_query", lambda *args: pytest.fail("no rewrite")
+    )
+
+    assert chat._search_query([make_message(1, "user", "What is borrowing?")]) == (
+        "What is borrowing?"
+    )
+
+
+def test_search_query_is_rewritten_with_recent_messages(monkeypatch):
+    received = {}
+
+    def fake_rewrite(recent, question, topic):
+        received.update(recent=[m["content"] for m in recent], question=question)
+        received["topic"] = topic
+        return "mutable borrowing rules"
+
+    monkeypatch.setattr(chat, "rewrite_search_query", fake_rewrite)
+    history = [make_message(i, "user", f"m{i}") for i in range(1, 10)]
+
+    query = chat._search_query(history, topic="Borrowing")
+
+    assert query == "mutable borrowing rules"
+    assert received == {
+        "recent": ["m3", "m4", "m5", "m6", "m7", "m8"],
+        "question": "m9",
+        "topic": "Borrowing",
+    }
+
+
+def test_search_query_falls_back_to_the_message(monkeypatch):
+    def fail(*args):
+        raise chat.OpenRouterError("timeout")
+
+    monkeypatch.setattr(chat, "rewrite_search_query", fail)
+    history = [make_message(1, "user", "Hi"), make_message(2, "user", "and that?")]
+
+    assert chat._search_query(history) == "and that?"
+
+
+def test_course_files_section_only_when_given():
+    without = build_course_chat_messages(make_course([]), "", [], [])
+    with_files = build_topic_chat_messages(
+        make_topic_detail(), "", [], [], [], course_files="COURSE FILES:\n- a.pdf: A"
+    )
+
+    assert "COURSE FILES" not in without[0]["content"]
+    assert "COURSE FILES:\n- a.pdf: A" in with_files[0]["content"]
+
+
+def msg(role: str, chars: int) -> dict:
+    return {"role": role, "content": "x" * chars}
+
+
+def test_estimate_tokens_counts_text_and_images():
+    image_message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "x" * 300},
+            {"type": "image_url", "image_url": {"url": "data:"}},
+        ],
+    }
+
+    assert chat.estimate_tokens([msg("user", 3000)]) == 1000
+    assert chat.estimate_tokens([image_message]) == 100 + chat.IMAGE_TOKENS
+
+
+def test_fit_to_budget_keeps_messages_that_fit():
+    messages = [msg("system", 300), msg("user", 300), msg("assistant", 300)]
+
+    assert chat.fit_to_budget(messages, budget=1000) == messages
+
+
+def test_fit_to_budget_drops_the_oldest_history_first():
+    messages = [msg("system", 300)] + [
+        {"role": "user", "content": f"{i}" + "x" * 299} for i in range(5)
+    ]
+
+    fitted = chat.fit_to_budget(messages, budget=400)
+
+    assert [m["content"][0] for m in fitted[1:]] == ["2", "3", "4"]
+    assert fitted[0] == messages[0]
+
+
+def test_fit_to_budget_always_keeps_system_and_last_message():
+    messages = [msg("system", 3000), msg("user", 3000), msg("user", 3000)]
+
+    fitted = chat.fit_to_budget(messages, budget=1)
+
+    assert fitted == [messages[0], messages[-1]]
+
+
+def test_cap_marks_cut_sections():
+    assert chat._cap("short", 10) == "short"
+    assert chat._cap("x" * 20, 10) == "x" * 10 + "\n[...truncated]"
+
+
+def test_long_lesson_is_cut_in_the_topic_prompt():
+    lesson = "y" * 100_000
+
+    messages = build_topic_chat_messages(make_topic_detail(lesson), "", [], [], [])
+    system = messages[0]["content"]
+
+    assert "y" * chat.MAX_LESSON_CHARS_IN_CONTEXT + "\n[...truncated]" in system
+    assert "y" * (chat.MAX_LESSON_CHARS_IN_CONTEXT + 1) not in system

@@ -1,10 +1,10 @@
 import AttachmentList from "./AttachmentList";
 import FileInput from "./FileInput";
 import SendButton from "./SendButton";
+import { ACCEPTED_TYPES } from "../utils/uploadLimits";
 
 function MessageComposer({ chat, fileUpload, placeholder }) {
-  const hasAttachments =
-    fileUpload.documents.length > 0 || fileUpload.images.length > 0;
+  const hasAttachments = fileUpload.documents.length > 0;
   const canSend =
     chat.userInput.trim() !== "" && !chat.isLoading && !fileUpload.isUploading;
 
@@ -14,8 +14,6 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
         <AttachmentList
           documents={fileUpload.documents}
           removeDocument={fileUpload.removeDocument}
-          images={fileUpload.images}
-          removeImage={fileUpload.removeImage}
         />
       )}
 
@@ -31,6 +29,7 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
           <FileInput
             inputRef={fileUpload.fileInput}
             onChange={fileUpload.handleUpload}
+            accept={ACCEPTED_TYPES}
           />
         </div>
 

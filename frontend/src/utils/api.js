@@ -1,5 +1,9 @@
 export const API_URL = "http://localhost:8000";
 
+export function fileContentUrl(fileUuid) {
+  return `${API_URL}/files/${fileUuid}/content`;
+}
+
 export async function fetchJson(path, options) {
   const response = await fetch(`${API_URL}${path}`, options);
 
