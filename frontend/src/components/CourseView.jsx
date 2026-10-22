@@ -1,6 +1,5 @@
 import { useOutletContext } from "react-router";
 import CourseRebuildPreview from "./CourseRebuildPreview";
-import RegenerateForm from "./RegenerateForm";
 import TopicCard from "./TopicCard";
 
 function CourseView() {
@@ -11,19 +10,7 @@ function CourseView() {
 
   return (
     <div className="max-w-3xl mx-auto w-full">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-ink">{course.title}</h1>
-        <RegenerateForm
-          key={course.id}
-          label="Rebuild course"
-          confirmMessage="Generate a new map of the course? Nothing changes until you apply it."
-          isRegenerating={courseRebuild.isProposing}
-          regenerate={courseRebuild.propose}
-        />
-      </div>
-      {courseRebuild.error && !courseRebuild.rebuild && (
-        <p className="text-sm text-warn mt-2">{courseRebuild.error}</p>
-      )}
+      <h1 className="text-xl font-semibold text-ink">{course.title}</h1>
 
       <div className="mt-3">
         <div className="h-2 rounded-full bg-line overflow-hidden">

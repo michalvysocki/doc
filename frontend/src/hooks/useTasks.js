@@ -8,7 +8,6 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
     tasks: null,
     error: null,
   });
-  const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
     if (!hasLesson) return;
@@ -72,36 +71,6 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
       ignore = true;
     };
   }, [topicId, refreshKey]);
-
-  async function regenerate(options = {}) {
-    const forTopicId = topicId;
-    setIsRegenerating(true);
-
-    try {
-      const tasks = await fetchJson(
-        `/topics/${forTopicId}/tasks?regenerate=true`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(options),
-        },
-      );
-      setResult((prev) =>
-        prev.topicId === forTopicId
-          ? { topicId: forTopicId, status: "ready", tasks, error: null }
-          : prev,
-      );
-      return true;
-    } catch (error) {
-      console.error("Error while regenerating tasks: ", error);
-      setResult((prev) =>
-        prev.topicId === forTopicId ? { ...prev, error: error.message } : prev,
-      );
-      return false;
-    } finally {
-      setIsRegenerating(false);
-    }
-  }
 
   function updateTask(forTopicId, taskId, update) {
     setResult((prev) =>
@@ -167,8 +136,6 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
     status: isCurrent ? result.status : "loading",
     tasks: isCurrent ? result.tasks : null,
     error: isCurrent ? result.error : null,
-    isRegenerating,
-    regenerate,
     submitAttempt,
     regradeAttempt,
   };

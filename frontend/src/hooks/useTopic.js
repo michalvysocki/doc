@@ -7,7 +7,6 @@ export default function useTopic(topicId, refreshKey = 0) {
     topic: null,
     error: null,
   });
-  const [isRegenerating, setIsRegenerating] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -55,7 +54,14 @@ export default function useTopic(topicId, refreshKey = 0) {
         if (ignore) return;
         setResult((prev) =>
           prev.topicId === topicId && prev.topic
-            ? { ...prev, topic: { ...prev.topic, subtopics: fresh.subtopics } }
+            ? {
+                ...prev,
+                topic: {
+                  ...prev.topic,
+                  subtopics: fresh.subtopics,
+                  explanation: fresh.explanation ?? prev.topic.explanation,
+                },
+              }
             : prev,
         );
       })
@@ -66,42 +72,10 @@ export default function useTopic(topicId, refreshKey = 0) {
     };
   }, [topicId, refreshKey]);
 
-  async function regenerate(options = {}) {
-    const forTopicId = topicId;
-    setIsRegenerating(true);
-
-    try {
-      const topic = await fetchJson(
-        `/topics/${forTopicId}/explanation?regenerate=true`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(options),
-        },
-      );
-      setResult((prev) =>
-        prev.topicId === forTopicId
-          ? { topicId: forTopicId, topic, error: null }
-          : prev,
-      );
-      return true;
-    } catch (error) {
-      console.error("Error while regenerating lesson: ", error);
-      setResult((prev) =>
-        prev.topicId === forTopicId ? { ...prev, error: error.message } : prev,
-      );
-      return false;
-    } finally {
-      setIsRegenerating(false);
-    }
-  }
-
   const isCurrent = result.topicId === topicId;
 
   return {
     topic: isCurrent ? result.topic : null,
     error: isCurrent ? result.error : null,
-    isRegenerating,
-    regenerate,
   };
 }

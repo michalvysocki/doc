@@ -372,6 +372,23 @@ def add_course_note(course_id: uuid.UUID, text: str) -> ChatMessageOut:
     return add_message(get_or_create_conversation(course_id), "user", text)
 
 
+def add_topic_note(topic_id: uuid.UUID, text: str) -> ChatMessageOut | None:
+    """
+    Adds a note about the learner's action (e.g. a confirmed regeneration) to
+    the topic conversation, so the model knows about it in the next message.
+
+    Returns:
+        ChatMessageOut | None: the note, or None if the topic does not exist
+    """
+
+    topic = get_topic(topic_id)
+    if topic is None:
+        return None
+    return add_message(
+        get_or_create_conversation(topic.course_id, topic_id), "user", text
+    )
+
+
 def send_topic_message(
     topic_id: uuid.UUID,
     content: str,

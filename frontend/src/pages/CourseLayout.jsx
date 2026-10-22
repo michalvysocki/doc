@@ -10,6 +10,7 @@ import useCourse from "../hooks/useCourse";
 import usePersistentChat from "../hooks/usePersistentChat";
 import useTopicDeletions from "../hooks/useTopicDeletions";
 import useCourseRebuild from "../hooks/useCourseRebuild";
+import useRegenerations from "../hooks/useRegenerations";
 import ChatPanel from "../components/ChatPanel";
 
 function CourseLayout() {
@@ -41,6 +42,15 @@ function CourseLayout() {
       if (action === "apply") setCourseVersion((version) => version + 1);
     },
   });
+  const regenerations = useRegenerations(topicId, courseVersion, {
+    onResolved: (note, proposal, action) => {
+      persistentChat.appendMessage(
+        `/topics/${proposal.topic_id}/messages`,
+        note,
+      );
+      if (action === "confirm") setCourseVersion((version) => version + 1);
+    },
+  });
   const mainRef = useRef(null);
 
   useEffect(() => {
@@ -66,6 +76,12 @@ function CourseLayout() {
         isOpen={isChatOpen}
         onToggle={() => setIsChatOpen((prev) => !prev)}
         topicDeletions={topicId ? null : topicDeletions}
+        regenerations={topicId ? regenerations : null}
+        placeholder={
+          topicId
+            ? "Ask about the lesson, or ask to regenerate it, add tasks or subtopics..."
+            : "Ask about the course, or ask to add, rename, move, delete topics or rebuild it..."
+        }
       />
     </>
   );

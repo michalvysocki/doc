@@ -2,7 +2,7 @@ import AttachmentList from "./AttachmentList";
 import FileInput from "./FileInput";
 import SendButton from "./SendButton";
 
-function MessageComposer({ chat, fileUpload }) {
+function MessageComposer({ chat, fileUpload, placeholder }) {
   const hasAttachments =
     fileUpload.documents.length > 0 || fileUpload.images.length > 0;
   const canSend = chat.userInput.trim() !== "" && !chat.isLoading;
@@ -21,7 +21,7 @@ function MessageComposer({ chat, fileUpload }) {
       <input
         value={chat.userInput}
         onChange={(e) => chat.setUserInput(e.target.value)}
-        placeholder="Write a message..."
+        placeholder={placeholder}
         className="w-full px-4 py-3 outline-none text-ink bg-transparent"
       />
 

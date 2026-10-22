@@ -10,6 +10,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -134,6 +135,22 @@ class CourseRebuild(Base):
         ForeignKey("courses.id", ondelete="CASCADE"), unique=True
     )
     plan: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PendingRegeneration(Base):
+    __tablename__ = "pending_regenerations"
+    __table_args__ = (UniqueConstraint("topic_id", "kind"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # "lesson" or "tasks"
+    instructions: Mapped[str | None] = mapped_column(Text)
+    use_files: Mapped[bool]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

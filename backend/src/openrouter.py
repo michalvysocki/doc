@@ -71,7 +71,13 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "choice), each with grading notes listing the key points of a correct answer. "
     "Never reveal grading notes. You may suggest tasks, but add them only after "
     "the learner agrees. After adding, tell the learner the numbers of the new "
-    "tasks. Answer in the language of the learner's last message and use Markdown."
+    "tasks. When the learner asks to regenerate or rewrite this lesson or its "
+    "tasks, use propose_lesson_regeneration or propose_tasks_regeneration with "
+    "their instructions; set use_files to true when they mention their files or "
+    "materials. Nothing is generated until the learner confirms with the card. "
+    "Never say the lesson or tasks were regenerated unless you see a "
+    '"[Regenerated lesson]" or "[Regenerated tasks]" note in the conversation. '
+    "Answer in the language of the learner's last message and use Markdown."
 )
 
 COURSE_CHAT_SYSTEM_PROMPT = (

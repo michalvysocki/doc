@@ -11,6 +11,7 @@ from markitdown import MarkItDown
 
 from .chat import (
     add_course_note,
+    add_topic_note,
     list_course_messages,
     list_topic_messages,
     send_course_message,
@@ -34,6 +35,11 @@ from .courses import (
     topic_exists,
 )
 from .openrouter import OpenRouterError, generate_topic_map
+from .regenerations import (
+    cancel_regeneration,
+    confirm_regeneration,
+    list_regenerations,
+)
 from .schemas import (
     AttemptCreate,
     AttemptOut,
@@ -45,6 +51,7 @@ from .schemas import (
     CourseSummary,
     GenerationOptions,
     MessageCreate,
+    PendingRegenerationOut,
     TaskOut,
     TopicDeletionOut,
     TopicDetail,
@@ -395,3 +402,47 @@ def post_course_rebuild(course_id: uuid.UUID, request: GenerationOptions | None 
         raise HTTPException(status_code=404, detail="Course not found")
 
     return get_course_rebuild(course_id)
+
+
+@app.get(
+    "/topics/{topic_id}/regenerations", response_model=list[PendingRegenerationOut]
+)
+def read_regenerations(topic_id: uuid.UUID):
+    if not topic_exists(topic_id):
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    return list_regenerations(topic_id)
+
+
+@app.post("/regenerations/{regeneration_id}/confirm", response_model=ChatMessageOut)
+def post_confirm_regeneration(regeneration_id: uuid.UUID):
+    try:
+        proposal = confirm_regeneration(regeneration_id)
+    except LessonMissingError as e:
+        raise HTTPException(
+            status_code=409, detail="The lesson has not been generated yet"
+        ) from e
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Regeneration not found")
+
+    note = add_topic_note(proposal.topic_id, f"[Regenerated {proposal.kind}]")
+    if note is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return note
+
+
+@app.post("/regenerations/{regeneration_id}/cancel", response_model=ChatMessageOut)
+def post_cancel_regeneration(regeneration_id: uuid.UUID):
+    proposal = cancel_regeneration(regeneration_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Regeneration not found")
+
+    note = add_topic_note(
+        proposal.topic_id, f"[Cancelled {proposal.kind} regeneration]"
+    )
+    if note is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return note

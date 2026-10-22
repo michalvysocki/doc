@@ -1,20 +1,15 @@
 import { useOutletContext } from "react-router";
 import useTasks from "../hooks/useTasks";
-import RegenerateForm from "../components/RegenerateForm";
 import TaskCard from "../components/TaskCard";
 
 function TasksTab() {
   const { topic, courseVersion } = useOutletContext();
   const hasLesson = topic.explanation !== null;
-  const {
-    status,
-    tasks,
-    error,
-    isRegenerating,
-    regenerate,
-    submitAttempt,
-    regradeAttempt,
-  } = useTasks(topic.id, hasLesson, courseVersion);
+  const { status, tasks, error, submitAttempt, regradeAttempt } = useTasks(
+    topic.id,
+    hasLesson,
+    courseVersion,
+  );
 
   if (!hasLesson) {
     return (
@@ -47,13 +42,6 @@ function TasksTab() {
         <p className="text-sm text-ink/60">
           {solvedCount} / {tasks.length} solved
         </p>
-        <RegenerateForm
-          key={topic.id}
-          label="Regenerate tasks"
-          confirmMessage="Regenerate tasks? The current tasks and your attempts will be archived."
-          isRegenerating={isRegenerating}
-          regenerate={regenerate}
-        />
       </div>
 
       {error && <p className="text-sm text-warn mt-2">{error}</p>}

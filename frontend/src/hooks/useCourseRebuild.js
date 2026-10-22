@@ -7,7 +7,6 @@ export default function useCourseRebuild(
   { onResolved } = {},
 ) {
   const [result, setResult] = useState({ courseId: null, rebuild: null });
-  const [isProposing, setIsProposing] = useState(false);
   const [busyAction, setBusyAction] = useState(null);
   const [error, setError] = useState(null);
 
@@ -26,32 +25,6 @@ export default function useCourseRebuild(
       ignore = true;
     };
   }, [courseId, refreshKey]);
-
-  async function propose(options = {}) {
-    const forCourseId = courseId;
-    setIsProposing(true);
-    setError(null);
-
-    try {
-      const rebuild = await fetchJson(`/courses/${forCourseId}/rebuild`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(options),
-      });
-      setResult((prev) =>
-        prev.courseId === forCourseId
-          ? { courseId: forCourseId, rebuild }
-          : prev,
-      );
-      return true;
-    } catch (error) {
-      console.error("Error while proposing course rebuild: ", error);
-      setError(error.message);
-      return false;
-    } finally {
-      setIsProposing(false);
-    }
-  }
 
   async function resolve(action) {
     const rebuild = result.rebuild;
@@ -74,10 +47,8 @@ export default function useCourseRebuild(
 
   return {
     rebuild: result.courseId === courseId ? result.rebuild : null,
-    isProposing,
     busyAction,
     error,
-    propose,
     apply: () => resolve("apply"),
     discard: () => resolve("discard"),
   };

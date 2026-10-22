@@ -1,25 +1,14 @@
 import { Link, useOutletContext } from "react-router";
 import MarkdownContent from "../components/MarkdownContent";
-import RegenerateForm from "../components/RegenerateForm";
 
 function TheoryTab() {
-  const { course, topic, error, isRegenerating, regenerate } =
-    useOutletContext();
+  const { course, topic, error } = useOutletContext();
 
   return (
     <>
       {topic.explanation !== null ? (
         <>
-          <div className="flex justify-end">
-            <RegenerateForm
-              key={topic.id}
-              label="Regenerate lesson"
-              confirmMessage="Regenerate the lesson? The current lesson will be replaced."
-              isRegenerating={isRegenerating}
-              regenerate={regenerate}
-            />
-          </div>
-          {error && <p className="text-sm text-warn mt-2">{error}</p>}
+          {error && <p className="text-sm text-warn">{error}</p>}
           <div className="prose max-w-none text-ink mt-4">
             <MarkdownContent>{topic.explanation}</MarkdownContent>
           </div>

@@ -19,10 +19,7 @@ function tabClass({ isActive }) {
 function TopicLayout() {
   const { topicId } = useParams();
   const { course, courseVersion } = useOutletContext();
-  const { topic, error, isRegenerating, regenerate } = useTopic(
-    topicId,
-    courseVersion,
-  );
+  const { topic, error } = useTopic(topicId, courseVersion);
 
   if (topic === null) {
     return error ? (
@@ -70,8 +67,6 @@ function TopicLayout() {
             courseVersion,
             topic,
             error,
-            isRegenerating,
-            regenerate,
           }}
         />
       </div>

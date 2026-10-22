@@ -491,3 +491,66 @@ def test_run_course_tool_rejects_too_long_rebuild_instructions():
 
     assert result.startswith("Error: invalid arguments")
     assert changed is False
+
+
+def regeneration_arguments(instructions: str | None = "Simpler") -> str:
+    return json.dumps({"instructions": instructions, "use_files": True})
+
+
+@pytest.mark.parametrize(
+    ("tool", "kind"),
+    [
+        ("propose_lesson_regeneration", "lesson"),
+        ("propose_tasks_regeneration", "tasks"),
+    ],
+)
+def test_run_topic_tool_proposes_regeneration(monkeypatch, tool, kind):
+    received = {}
+
+    def fake_propose(topic_id, kind, instructions, use_files):
+        received.update(topic=topic_id, kind=kind, instructions=instructions)
+        received["use_files"] = use_files
+
+    monkeypatch.setattr(course_tools, "propose_regeneration", fake_propose)
+    topic_id = uuid.uuid4()
+
+    result, changed = course_tools.run_topic_tool(
+        uuid.uuid4(), topic_id, tool, regeneration_arguments()
+    )
+
+    assert result.startswith(f"Regeneration of the {kind} proposed;")
+    assert changed is True
+    assert received == {
+        "topic": topic_id,
+        "kind": kind,
+        "instructions": "Simpler",
+        "use_files": True,
+    }
+
+
+def test_run_topic_tool_reports_missing_lesson_for_task_regeneration(monkeypatch):
+    def fail(*args):
+        raise course_tools.LessonMissingError()
+
+    monkeypatch.setattr(course_tools, "propose_regeneration", fail)
+
+    result = course_tools.run_topic_tool(
+        uuid.uuid4(),
+        uuid.uuid4(),
+        "propose_tasks_regeneration",
+        regeneration_arguments(),
+    )
+
+    assert result == ("Error: the lesson has not been generated yet", False)
+
+
+def test_run_topic_tool_rejects_too_long_regeneration_instructions():
+    result, changed = course_tools.run_topic_tool(
+        uuid.uuid4(),
+        uuid.uuid4(),
+        "propose_lesson_regeneration",
+        regeneration_arguments("x" * 2001),
+    )
+
+    assert result.startswith("Error: invalid arguments")
+    assert changed is False

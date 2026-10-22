@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from .course_rebuilds import RebuildError, get_course_rebuild, propose_course_rebuild
 from .courses import FIRST, TopicPlacementError, add_topics, move_topic, rename_topic
 from .openrouter import OpenRouterError
+from .regenerations import propose_regeneration
 from .schemas import (
     AddSubtopicsArgs,
     AddTasksArgs,
@@ -13,6 +14,7 @@ from .schemas import (
     MoveTopicArgs,
     ProposeCourseRebuildArgs,
     ProposeTopicDeletionArgs,
+    RegenerationArgs,
     RenameTopicArgs,
 )
 from .tasks import LessonMissingError, add_tasks
@@ -108,7 +110,42 @@ ADD_TASKS_TOOL = {
     },
 }
 
-TOPIC_TOOLS = [ADD_SUBTOPICS_TOOL, ADD_TASKS_TOOL]
+PROPOSE_LESSON_REGENERATION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_lesson_regeneration",
+        "description": (
+            "Propose rewriting the current lesson. Generates nothing yet: the "
+            "learner confirms or cancels with a card in the chat."
+        ),
+        "parameters": RegenerationArgs.model_json_schema(),
+    },
+}
+
+PROPOSE_TASKS_REGENERATION_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_tasks_regeneration",
+        "description": (
+            "Propose replacing the practice tasks of the current lesson with new "
+            "ones. Generates nothing yet: the learner confirms or cancels with a "
+            "card in the chat."
+        ),
+        "parameters": RegenerationArgs.model_json_schema(),
+    },
+}
+
+TOPIC_TOOLS = [
+    ADD_SUBTOPICS_TOOL,
+    ADD_TASKS_TOOL,
+    PROPOSE_LESSON_REGENERATION_TOOL,
+    PROPOSE_TASKS_REGENERATION_TOOL,
+]
+
+REGENERATION_KINDS = {
+    "propose_lesson_regeneration": "lesson",
+    "propose_tasks_regeneration": "tasks",
+}
 
 
 def _parse_id(value: str | None) -> uuid.UUID | None:
@@ -227,6 +264,17 @@ def run_topic_tool(
             args = AddTasksArgs.model_validate_json(arguments)
             numbers = add_tasks(topic_id, args.tasks)
             return f"Added tasks: {', '.join(map(str, numbers))}", True
+        if name in REGENERATION_KINDS:
+            args = RegenerationArgs.model_validate_json(arguments)
+            kind = REGENERATION_KINDS[name]
+            propose_regeneration(
+                topic_id, kind, args.instructions or None, args.use_files
+            )
+            summary = (
+                f"Regeneration of the {kind} proposed; nothing is generated yet. "
+                "The learner confirms or cancels it with the card shown in the chat."
+            )
+            return summary, True
     except ValidationError as e:
         return f"Error: invalid arguments: {e}", False
     except (ValueError, TopicPlacementError) as e:

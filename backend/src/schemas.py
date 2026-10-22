@@ -216,6 +216,25 @@ class ProposeCourseRebuildArgs(BaseModel):
     )
 
 
+class RegenerationArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instructions: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None
+    ) = Field(description="What the learner wants changed, in their own words")
+    use_files: bool = Field(
+        description="True if the learner wants it based on the uploaded course files"
+    )
+
+
+class PendingRegenerationOut(BaseModel):
+    id: uuid.UUID
+    topic_id: uuid.UUID
+    kind: Literal["lesson", "tasks"]
+    instructions: str | None
+    use_files: bool
+
+
 class TopicDeletionOut(BaseModel):
     id: uuid.UUID
     topic_id: uuid.UUID
