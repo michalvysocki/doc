@@ -17,6 +17,13 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
+WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH", "on").lower() != "off"
+MAX_SOURCES = 8
+
+WEB_SEARCH_TOOL = {
+    "type": "openrouter:web_search",
+    "parameters": {"max_results": 5, "max_uses": 3},
+}
 
 TOPIC_MAP_SYSTEM_PROMPT = (
     "You are an expert teacher designing a course. Based on the user's request, "
@@ -48,7 +55,13 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "Do not start with a heading that repeats the topic title. Write in the "
     "same language as the topic title. If course materials are given, base the "
     "lesson on them where they are relevant and stay consistent with them. If the "
-    "learner gives instructions, follow them."
+    "learner gives instructions, follow them. If the course outline is given, do "
+    "not explain in detail what other topics of the course cover; refer to them by "
+    "title instead, and build on the topics listed before this one. If the "
+    "learner's goal is given, choose examples that fit it. You can search the web "
+    "when the topic needs current information, such as recent versions or "
+    "changes; do not search for well-established basics. Do not write a list of "
+    "sources; it is added automatically."
 )
 
 TOPIC_CHAT_SYSTEM_PROMPT = (
@@ -77,6 +90,9 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "materials. Nothing is generated until the learner confirms with the card. "
     "Never say the lesson or tasks were regenerated unless you see a "
     '"[Regenerated lesson]" or "[Regenerated tasks]" note in the conversation. '
+    "You can search the web, but only when the question needs current or "
+    "external information that the lesson and the course materials do not "
+    "cover. Do not write your own list of sources; it is added automatically. "
     "Answer in the language of the learner's last message and use Markdown."
 )
 
@@ -103,8 +119,11 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     "use_files to true when they mention their files or materials. It changes "
     "nothing: the learner sees a preview and applies or discards it. For small "
     "changes prefer the other tools. Never say the course was rebuilt unless you "
-    'see a "[Rebuilt course: ...]" note in the conversation. Answer in the language '
-    "of the learner's last message and use Markdown."
+    'see a "[Rebuilt course: ...]" note in the conversation. '
+    "You can search the web, but only when the question needs current or "
+    "external information that the lesson and the course materials do not "
+    "cover. Do not write your own list of sources; it is added automatically. "
+    "Answer in the language of the learner's last message and use Markdown."
 )
 
 TASKS_SYSTEM_PROMPT = (
@@ -118,7 +137,7 @@ TASKS_SYSTEM_PROMPT = (
     "language as the lesson. If course materials are given, use them as "
     "inspiration for the style, topics and difficulty of the tasks, but keep the "
     "tasks answerable from the lesson. If the learner gives instructions, follow "
-    "them."
+    "them. If the learner's goal is given, prefer practical exercises that fit it."
 )
 
 GRADING_SYSTEM_PROMPT = (
@@ -186,6 +205,36 @@ def send_query(messages: list[dict[str, Any]]) -> str:
         raise OpenRouterError("Unexpected response format from OpenRouter") from e
 
 
+def with_web_search(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Adds the web search server tool, unless it is turned off in .env."""
+
+    return [*tools, WEB_SEARCH_TOOL] if WEB_SEARCH_ENABLED else tools
+
+
+def append_sources(content: str, annotations: list[dict[str, Any]] | None) -> str:
+    """
+    Appends a Markdown list of the web pages the model cited (from the
+    url_citation annotations), without duplicates and at most MAX_SOURCES.
+    """
+
+    sources: dict[str, str] = {}
+    for annotation in annotations or []:
+        if annotation.get("type") != "url_citation":
+            continue
+        citation = annotation.get("url_citation") or {}
+        url = citation.get("url")
+        if url and url not in sources:
+            title = citation.get("title") or url
+            sources[url] = title.replace("[", "(").replace("]", ")")
+
+    if not sources:
+        return content
+    lines = [
+        f"- [{title}]({url})" for url, title in list(sources.items())[:MAX_SOURCES]
+    ]
+    return f"{content}\n\n**Sources**\n" + "\n".join(lines)
+
+
 def send_query_with_tools(
     messages: list[dict[str, Any]], tools: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -199,7 +248,7 @@ def send_query_with_tools(
         {
             "model": MODEL,
             "messages": messages,
-            "tools": tools,
+            "tools": with_web_search(tools),
             "plugins": [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
         },
         timeout=120,
@@ -289,9 +338,12 @@ def generate_topic_explanation(
     subtopics: list[str],
     instructions: str | None = None,
     materials: str | None = None,
+    goal: str | None = None,
+    outline: str | None = None,
 ) -> str:
     context_lines = [
         f"Course: {course_title}",
+        *([f"Learner's goal: {goal}"] if goal else []),
         f"Topic path: {' > '.join([*path, title])}",
         f"Topic: {title}",
         f"Topic description: {description}",
@@ -300,33 +352,36 @@ def generate_topic_explanation(
         context_lines.append(
             "Subtopics covered in separate lessons: " + ", ".join(subtopics)
         )
+    if outline:
+        context_lines.append(f"\nCOURSE OUTLINE:\n{outline}")
 
-    data = _post_to_openrouter(
-        URL,
-        {
-            "model": MODEL,
-            "messages": [
-                {"role": "system", "content": TOPIC_EXPLANATION_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": _with_extras(
-                        "\n".join(context_lines), instructions, materials
-                    ),
-                },
-            ],
-        },
-        timeout=180,
-    )
+    payload: dict[str, Any] = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": TOPIC_EXPLANATION_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": _with_extras(
+                    "\n".join(context_lines), instructions, materials
+                ),
+            },
+        ],
+    }
+    tools = with_web_search([])
+    if tools:
+        payload["tools"] = tools
+    data = _post_to_openrouter(URL, payload, timeout=240)
 
     try:
-        content = data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        content = message["content"]
     except (KeyError, IndexError) as e:
         raise OpenRouterError("Unexpected response format from OpenRouter") from e
 
     if not content:
         raise OpenRouterError("Model returned an empty explanation")
 
-    return content
+    return append_sources(content, message.get("annotations"))
 
 
 def generate_tasks(
@@ -336,10 +391,12 @@ def generate_tasks(
     lesson: str,
     instructions: str | None = None,
     materials: str | None = None,
+    goal: str | None = None,
 ) -> GeneratedTaskSet:
     context = _with_extras(
         f"Course: {course_title}\n"
-        f"Topic path: {' > '.join([*path, title])}\n\n"
+        + (f"Learner's goal: {goal}\n" if goal else "")
+        + f"Topic path: {' > '.join([*path, title])}\n\n"
         f"LESSON:\n{lesson}",
         instructions,
         materials,

@@ -104,7 +104,9 @@ def propose_course_rebuild(
     plan = generate_rebuild_plan(
         course_title=course.title,
         initial_prompt=course.initial_prompt,
-        outline=format_outline_with_progress(course.topics, include_ids=True),
+        outline=format_outline_with_progress(
+            course.topics, include_ids=True, include_descriptions=True
+        ),
         instructions=instructions,
         materials=materials,
     )

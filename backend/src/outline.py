@@ -23,11 +23,15 @@ def format_course_outline(
 
 
 def format_outline_with_progress(
-    topics: list[TopicOut], depth: int = 0, include_ids: bool = False
+    topics: list[TopicOut],
+    depth: int = 0,
+    include_ids: bool = False,
+    include_descriptions: bool = False,
 ) -> str:
     """
     Formats the topic tree as an indented list with lesson and task progress,
-    optionally with topic ids (needed by tools that change the course).
+    optionally with topic ids (needed by tools that change the course) and
+    descriptions (to tell similar topics apart).
     """
 
     lines = []
@@ -42,10 +46,13 @@ def format_outline_with_progress(
 
         suffix = f" [{', '.join(status)}]" if status else ""
         topic_id = f" (id: {topic.id})" if include_ids else ""
-        lines.append(f"{'  ' * depth}- {topic.title}{suffix}{topic_id}")
+        description = f": {topic.description}" if include_descriptions else ""
+        lines.append(f"{'  ' * depth}- {topic.title}{suffix}{topic_id}{description}")
         if topic.children:
             lines.append(
-                format_outline_with_progress(topic.children, depth + 1, include_ids)
+                format_outline_with_progress(
+                    topic.children, depth + 1, include_ids, include_descriptions
+                )
             )
 
     return "\n".join(lines)

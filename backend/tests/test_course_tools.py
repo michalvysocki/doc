@@ -554,3 +554,21 @@ def test_run_topic_tool_rejects_too_long_regeneration_instructions():
 
     assert result.startswith("Error: invalid arguments")
     assert changed is False
+
+
+def test_ask_with_tools_appends_sources_of_the_final_answer(monkeypatch):
+    message = {
+        "content": "Rust 1.90 is the latest",
+        "annotations": [
+            {
+                "type": "url_citation",
+                "url_citation": {"url": "https://x.dev", "title": "X"},
+            }
+        ],
+    }
+    monkeypatch.setattr(chat, "send_query_with_tools", lambda messages, tools: message)
+
+    answer, changed = chat._ask_with_tools([], ["tool"], lambda name, args: ("", False))
+
+    assert answer == "Rust 1.90 is the latest\n\n**Sources**\n- [X](https://x.dev)"
+    assert changed is False

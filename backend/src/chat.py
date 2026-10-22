@@ -14,6 +14,7 @@ from .openrouter import (
     COURSE_CHAT_SYSTEM_PROMPT,
     TOPIC_CHAT_SYSTEM_PROMPT,
     OpenRouterError,
+    append_sources,
     send_query,
     send_query_with_tools,
 )
@@ -220,6 +221,7 @@ def build_topic_chat_messages(
     fragments: list[dict],
     history: list[ChatMessageOut],
     tasks: list[TaskOut],
+    goal: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -234,6 +236,7 @@ def build_topic_chat_messages(
     sections = [
         TOPIC_CHAT_SYSTEM_PROMPT,
         f"COURSE: {topic.course_title}",
+        *([f"LEARNER'S GOAL: {goal}"] if goal else []),
         f"COURSE OUTLINE:\n{outline}",
         f"CURRENT LESSON: {path}\n{topic.description}\n\n{lesson}",
         f"SUBTOPICS OF THIS LESSON (lesson level {level} of max 3):\n"
@@ -302,7 +305,9 @@ def _ask_with_tools(
         if not tool_calls:
             if not message.get("content"):
                 raise OpenRouterError("Model returned an empty answer")
-            return message["content"], changed
+            return append_sources(
+                message["content"], message.get("annotations")
+            ), changed
 
         messages.append(message)
         for call in tool_calls:
@@ -421,7 +426,9 @@ def send_topic_message(
                 topic.course_id, exclude_topic_id=topic_id
             ),
         )
-        return build_topic_chat_messages(topic, outline, fragments, history, tasks)
+        return build_topic_chat_messages(
+            topic, outline, fragments, history, tasks, goal=course.initial_prompt
+        )
 
     return _exchange(
         get_or_create_conversation(topic.course_id, topic_id),
@@ -458,7 +465,9 @@ def send_course_message(
     if course is None:
         return None
 
-    outline = format_outline_with_progress(course.topics, include_ids=True)
+    outline = format_outline_with_progress(
+        course.topics, include_ids=True, include_descriptions=True
+    )
 
     def build(history: list[ChatMessageOut]) -> list[dict[str, Any]]:
         fragments = retrieve_chunks(

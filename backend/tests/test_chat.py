@@ -311,3 +311,26 @@ def test_topic_prompt_lists_subtopics_with_ids_and_level():
     header = "SUBTOPICS OF THIS LESSON (lesson level 2 of max 3):\n"
     assert header + "(none)" in without[0]["content"]
     assert f"{header}- Lifetimes (id: {subtopic.id})" in with_subtopics[0]["content"]
+
+
+def test_topic_prompt_has_goal_only_when_given():
+    without = build_topic_chat_messages(make_topic_detail(), "- Basics", [], [], [])
+    with_goal = build_topic_chat_messages(
+        make_topic_detail(), "- Basics", [], [], [], goal="Rust for ML"
+    )
+
+    assert "LEARNER'S GOAL" not in without[0]["content"]
+    assert (
+        "COURSE: Rust\n\nLEARNER'S GOAL: Rust for ML\n\nCOURSE OUTLINE:"
+        in (with_goal[0]["content"])
+    )
+
+
+def test_outline_can_include_descriptions():
+    topic = make_topic_out("Basics", [make_topic_out("Borrowing")])
+
+    outline = format_outline_with_progress([topic], include_descriptions=True)
+
+    assert outline == (
+        "- Basics: Basics description\n  - Borrowing: Borrowing description"
+    )

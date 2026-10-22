@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import OpenRouterError, generate_topic_explanation
+from .outline import format_course_outline
 from .schemas import (
     CourseOut,
     CourseProgress,
@@ -461,6 +462,7 @@ def create_explanation(
         else None
     )
 
+    course = get_course(topic.course_id)
     explanation = generate_topic_explanation(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
@@ -469,6 +471,8 @@ def create_explanation(
         subtopics=[link.title for link in topic.subtopics],
         instructions=instructions,
         materials=materials,
+        goal=course.initial_prompt if course else None,
+        outline=format_course_outline(course.topics, topic.id) if course else None,
     )
 
     with SessionLocal() as session, session.begin():

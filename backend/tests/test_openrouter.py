@@ -192,3 +192,103 @@ def test_rebuild_request_has_goal_outline_materials_and_instructions(monkeypatch
         "LEARNER'S INSTRUCTIONS:\nMore async"
     )
     assert sent["response_format"]["json_schema"]["name"] == "rebuild_plan"
+
+
+def test_explanation_request_has_goal_and_outline_before_extras(monkeypatch):
+    content = capture_explanation_request(
+        monkeypatch,
+        goal="Rust for ML",
+        outline="- Basics\n  - Borrowing   <- current lesson",
+        instructions="Simpler",
+    )
+
+    assert content == (
+        "Course: Rust\n"
+        "Learner's goal: Rust for ML\n"
+        "Topic path: Basics > Borrowing\n"
+        "Topic: Borrowing\n"
+        "Topic description: References\n"
+        "\nCOURSE OUTLINE:\n- Basics\n  - Borrowing   <- current lesson\n"
+        "\nLEARNER'S INSTRUCTIONS:\nSimpler"
+    )
+
+
+def test_tasks_request_has_goal_under_course(monkeypatch):
+    content = capture_tasks_request(monkeypatch, goal="Rust for ML")
+
+    assert content == (
+        "Course: Rust\nLearner's goal: Rust for ML\n"
+        "Topic path: Basics > Borrowing\n\nLESSON:\nText"
+    )
+
+
+def citation(url: str, title: str | None = "Page") -> dict:
+    return {"type": "url_citation", "url_citation": {"url": url, "title": title}}
+
+
+def test_append_sources_leaves_content_without_citations():
+    assert openrouter.append_sources("Answer", None) == "Answer"
+    assert openrouter.append_sources("Answer", [{"type": "other"}]) == "Answer"
+
+
+def test_append_sources_lists_unique_pages_in_order():
+    annotations = [
+        citation("https://a.dev", "A [docs]"),
+        citation("https://b.dev", None),
+        citation("https://a.dev", "A again"),
+    ]
+
+    result = openrouter.append_sources("Answer", annotations)
+
+    assert result == (
+        "Answer\n\n**Sources**\n"
+        "- [A (docs)](https://a.dev)\n"
+        "- [https://b.dev](https://b.dev)"
+    )
+
+
+def test_append_sources_keeps_at_most_max_sources():
+    annotations = [citation(f"https://site{i}.dev") for i in range(12)]
+
+    result = openrouter.append_sources("Answer", annotations)
+
+    assert result.count("\n- [") == openrouter.MAX_SOURCES
+
+
+def test_with_web_search_respects_the_switch(monkeypatch):
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", True)
+    assert openrouter.with_web_search(["mine"]) == ["mine", openrouter.WEB_SEARCH_TOOL]
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", False)
+    assert openrouter.with_web_search(["mine"]) == ["mine"]
+
+
+def test_chat_request_offers_web_search_next_to_own_tools(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": "Hi"}}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", True)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    openrouter.send_query_with_tools([], [{"type": "function"}])
+
+    assert sent["tools"] == [{"type": "function"}, openrouter.WEB_SEARCH_TOOL]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_lesson_request_uses_web_search_only_when_enabled(monkeypatch, enabled):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        message = {"content": "Lesson", "annotations": [citation("https://a.dev")]}
+        return {"choices": [{"message": message}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", enabled)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    lesson = openrouter.generate_topic_explanation("Rust", [], "Borrowing", "d", [])
+
+    assert ("tools" in sent) is enabled
+    assert lesson == "Lesson\n\n**Sources**\n- [Page](https://a.dev)"

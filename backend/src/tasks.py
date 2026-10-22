@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from sqlalchemy import func, select, update
 
-from .courses import get_file_materials, get_topic
+from .courses import get_course, get_file_materials, get_topic
 from .database import SessionLocal
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_tasks, grade_answer
@@ -93,6 +93,7 @@ def create_tasks(
         if use_files
         else None
     )
+    course = get_course(topic.course_id)
     generated = generate_tasks(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
@@ -100,6 +101,7 @@ def create_tasks(
         lesson=topic.explanation,
         instructions=instructions,
         materials=materials,
+        goal=course.initial_prompt if course else None,
     )
 
     with SessionLocal() as session, session.begin():
