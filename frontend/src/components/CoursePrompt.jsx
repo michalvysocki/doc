@@ -59,7 +59,7 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="border border-line rounded-md bg-surface shadow-sm max-w-2xl mx-auto w-full"
+      className="border border-line rounded-md bg-surface shadow-sm max-w-2xl mx-auto w-full focus-within:border-accent"
     >
       <textarea
         value={prompt}

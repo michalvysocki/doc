@@ -7,6 +7,7 @@ import {
 } from "react-router";
 import { ChevronRight } from "lucide-react";
 import useTopic from "../hooks/useTopic";
+import Skeleton from "../components/Skeleton";
 
 function tabClass({ isActive }) {
   return `px-3 py-2 text-sm border-b-2 -mb-px ${
@@ -25,7 +26,10 @@ function TopicLayout() {
     return error ? (
       <p className="text-sm text-warn">{error}</p>
     ) : (
-      <p className="text-sm text-ink/60">Loading topic...</p>
+      <div className="max-w-3xl mx-auto w-full">
+        <Skeleton lines={2} className="w-2/3" />
+        <Skeleton lines={8} className="mt-8" />
+      </div>
     );
   }
 

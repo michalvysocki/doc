@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import AttachmentCard from "./AttachmentCard";
 import MarkdownContent from "./MarkdownContent";
+import EmptyState from "./EmptyState";
+import { MessagesSquare } from "lucide-react";
 import getFileLabel, { getFileLabelFromName } from "../utils/fileLabel";
 import { fileContentUrl } from "../utils/api";
 
-function MessageHistory({ messageHistory, isLoading }) {
+function MessageHistory({ messageHistory, isLoading, isReady, emptyState }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -17,6 +19,11 @@ function MessageHistory({ messageHistory, isLoading }) {
       ref={containerRef}
       className="flex flex-col gap-4 p-4 max-w-2xl mx-auto w-full flex-1 overflow-y-auto"
     >
+      {isReady && emptyState && messageHistory.length === 0 && !isLoading && (
+        <div className="my-auto">
+          <EmptyState icon={MessagesSquare} {...emptyState} />
+        </div>
+      )}
       {messageHistory.map((message, index) =>
         message.role === "user" ? (
           <div

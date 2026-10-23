@@ -13,6 +13,7 @@ import useCourseRebuild from "../hooks/useCourseRebuild";
 import useRegenerations from "../hooks/useRegenerations";
 import useCourseFiles from "../hooks/useCourseFiles";
 import ChatPanel from "../components/ChatPanel";
+import Skeleton from "../components/Skeleton";
 
 function CourseLayout() {
   const { courseId } = useParams();
@@ -75,7 +76,10 @@ function CourseLayout() {
         {error ? (
           <p className="text-sm text-warn">{error}</p>
         ) : course === null ? (
-          <p className="text-sm text-ink/60">Loading course...</p>
+          <div className="max-w-3xl mx-auto w-full">
+            <Skeleton lines={1} className="w-1/2" />
+            <Skeleton lines={6} className="mt-8" />
+          </div>
         ) : (
           <Outlet
             context={{ course, courseVersion, courseRebuild, refreshCourse }}
@@ -92,6 +96,17 @@ function CourseLayout() {
         topicDeletions={topicId ? null : topicDeletions}
         regenerations={topicId ? regenerations : null}
         courseFiles={courseFiles}
+        emptyState={
+          topicId
+            ? {
+                title: "Ask about this lesson",
+                text: "…or ask to regenerate it, add tasks or subtopics.",
+              }
+            : {
+                title: "Ask about the course",
+                text: "…or ask to add, move or delete topics, or rebuild the course.",
+              }
+        }
         placeholder={
           topicId
             ? "Ask about the lesson, or ask to regenerate it, add tasks or subtopics..."

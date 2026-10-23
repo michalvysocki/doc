@@ -1,6 +1,8 @@
 import { useOutletContext } from "react-router";
 import useTasks from "../hooks/useTasks";
 import TaskCard from "../components/TaskCard";
+import Skeleton from "../components/Skeleton";
+import { LoaderCircle } from "lucide-react";
 
 function TasksTab() {
   const { topic, courseVersion } = useOutletContext();
@@ -19,11 +21,12 @@ function TasksTab() {
     );
   }
   if (status === "loading") {
-    return <p className="text-sm text-ink/60">Loading tasks...</p>;
+    return <Skeleton lines={4} />;
   }
   if (status === "generating") {
     return (
-      <p className="text-sm text-ink/60">
+      <p className="flex items-center gap-2 text-sm text-ink/60">
+        <LoaderCircle size={16} className="animate-spin text-accent" />
         Creating tasks, this can take a few minutes...
       </p>
     );

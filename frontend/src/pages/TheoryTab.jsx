@@ -1,5 +1,6 @@
 import { Link, useOutletContext } from "react-router";
 import MarkdownContent from "../components/MarkdownContent";
+import { LoaderCircle } from "lucide-react";
 import SourcesList from "../components/SourcesList";
 
 function TheoryTab() {
@@ -17,7 +18,8 @@ function TheoryTab() {
       ) : error ? (
         <p className="text-sm text-warn">{error}</p>
       ) : (
-        <p className="text-sm text-ink/60">
+        <p className="flex items-center gap-2 text-sm text-ink/60">
+          <LoaderCircle size={16} className="animate-spin text-accent" />
           Writing the lesson, this can take a few minutes...
         </p>
       )}

@@ -15,6 +15,7 @@ function ChatPanel({
   regenerations,
   placeholder,
   courseFiles,
+  emptyState,
 }) {
   if (!isOpen) {
     return (
@@ -66,6 +67,8 @@ function ChatPanel({
       <MessageHistory
         messageHistory={chat.messageHistory}
         isLoading={chat.isLoading}
+        isReady={chat.isHistoryReady}
+        emptyState={emptyState}
       />
       {regenerations && <RegenerationCards regenerations={regenerations} />}
       {topicDeletions && <TopicDeletionCards topicDeletions={topicDeletions} />}

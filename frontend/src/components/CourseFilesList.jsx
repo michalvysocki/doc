@@ -1,4 +1,5 @@
-import { FileText, Trash2 } from "lucide-react";
+import { FileText, Paperclip, Trash2 } from "lucide-react";
+import EmptyState from "./EmptyState";
 import { fileContentUrl } from "../utils/api";
 
 function CourseFilesList({ courseFiles }) {
@@ -8,10 +9,12 @@ function CourseFilesList({ courseFiles }) {
     <div className="mx-3 mb-2 rounded-md border border-line bg-surface shadow-sm p-3 text-sm max-h-48 overflow-y-auto">
       <p className="font-medium text-ink">Course files</p>
       {files.length === 0 ? (
-        <p className="mt-1 text-ink/60">
-          No files uploaded yet. Attach files in a chat to use them in this
-          course.
-        </p>
+        <EmptyState
+          compact
+          icon={Paperclip}
+          title="No files yet"
+          text="Attach files in a chat to use them in this course."
+        />
       ) : (
         <ul className="mt-1 flex flex-col gap-1">
           {files.map((file) => (

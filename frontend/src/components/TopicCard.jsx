@@ -50,26 +50,33 @@ function TopicCard({ topic }) {
         </span>
       </button>
 
-      {isOpen && (
-        <div className="pl-10 pr-4 pb-3">
-          <p className="text-sm text-ink/70">{topic.description}</p>
-          <Link
-            to={`/courses/${courseId}/topics/${topic.id}`}
-            className="inline-flex items-center gap-1 mt-2 text-sm text-accent hover:underline"
-          >
-            Open lesson
-            <ArrowRight size={14} />
-          </Link>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${
+          isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+        inert={!isOpen}
+      >
+        <div className="overflow-hidden">
+          <div className="pl-10 pr-4 pb-3">
+            <p className="text-sm text-ink/70">{topic.description}</p>
+            <Link
+              to={`/courses/${courseId}/topics/${topic.id}`}
+              className="inline-flex items-center gap-1 mt-2 text-sm text-accent hover:underline"
+            >
+              Open lesson
+              <ArrowRight size={14} />
+            </Link>
 
-          {topic.children.length > 0 && (
-            <div className="flex flex-col gap-2 mt-3">
-              {topic.children.map((child) => (
-                <TopicCard key={child.id} topic={child} />
-              ))}
-            </div>
-          )}
+            {topic.children.length > 0 && (
+              <div className="flex flex-col gap-2 mt-3">
+                {topic.children.map((child) => (
+                  <TopicCard key={child.id} topic={child} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

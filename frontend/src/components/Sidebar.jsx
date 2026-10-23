@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import Skeleton from "./Skeleton";
 
 function Sidebar({
   courses,
@@ -67,10 +68,12 @@ function Sidebar({
         Courses
       </p>
       <nav className="flex-1 overflow-y-auto px-3 pb-3 pt-1 flex flex-col gap-1">
-        {isLoading && <p className="text-xs text-ink/60 px-3">Loading...</p>}
+        {isLoading && <Skeleton lines={3} className="px-3 py-2" />}
         {error && <p className="text-xs text-warn px-3">{error}</p>}
         {!isLoading && !error && courses.length === 0 && (
-          <p className="text-xs text-ink/60 px-3">No courses yet</p>
+          <p className="text-xs text-ink/60 px-3">
+            No courses yet. Create your first one above.
+          </p>
         )}
 
         {courses.map((course) => (

@@ -1,5 +1,7 @@
 import { Link, useOutletContext } from "react-router";
-import { ArrowLeft, CircleCheck } from "lucide-react";
+import { ArrowLeft, CircleCheck, PartyPopper } from "lucide-react";
+import EmptyState from "../components/EmptyState";
+import Skeleton from "../components/Skeleton";
 import useReviews from "../hooks/useReviews";
 import TaskCard from "../components/TaskCard";
 
@@ -26,18 +28,24 @@ function ReviewPage() {
       </Link>
       <h1 className="text-xl font-semibold text-ink mt-2">Review</h1>
 
-      {status === "loading" && (
-        <p className="text-sm text-ink/60 mt-4">Loading reviews...</p>
-      )}
+      {status === "loading" && <Skeleton lines={4} className="mt-6" />}
       {status === "error" && <p className="text-sm text-warn mt-4">{error}</p>}
 
       {status === "ready" && (
         <>
-          <p className="text-sm text-ink/60 mt-1">
-            {remaining > 0
-              ? `${remaining} ${remaining === 1 ? "task" : "tasks"} left to review today`
-              : "Nothing to review today. Tasks come back here a few days after you answer them."}
-          </p>
+          {tasks.length === 0 ? (
+            <EmptyState
+              icon={PartyPopper}
+              title="All caught up"
+              text="Nothing to review today. Tasks come back here a few days after you answer them."
+            />
+          ) : (
+            <p className="text-sm text-ink/60 mt-1">
+              {remaining > 0
+                ? `${remaining} ${remaining === 1 ? "task" : "tasks"} left to review today`
+                : "All done for today, nice work."}
+            </p>
+          )}
 
           <ol className="mt-4 flex flex-col gap-4">
             {tasks.map((task) => (

@@ -28,5 +28,8 @@ export default function useCourse(courseId, refreshKey) {
 
   const isCurrent = result.courseId === courseId;
 
-  return { course: result.course, error: isCurrent ? result.error : null };
+  return {
+    course: isCurrent ? result.course : null,
+    error: isCurrent ? result.error : null,
+  };
 }

@@ -155,5 +155,6 @@ export default function usePersistentChat(
     appendMessage,
     isLoading,
     error: isCurrent ? chat.error : null,
+    isHistoryReady: isCurrent,
   };
 }
