@@ -2,11 +2,17 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --color-paper: #fafaf8;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #fefcf9; /* light cream vanilla */
   --color-ink: #1c1b19;
-  --color-line: #e4e2dc;
-  --color-accent: #2b5d4f;
-  --color-warn: #b3542b;
+  --color-line: #f0e9e0;
+  --color-surface: #ffffff; /* cards and panels on top of the page */
+  --color-shade: #fcf8f2; /* sidebar */
+  --color-accent: #182f53; /* deep ocean */
+  --color-warn: #b3542b; /* incorrect, errors */
+  --color-good: #3d7a57; /* correct, completed */
+  --color-partial: #a86a12; /* partially correct */
+  --radius-md: 0.5rem; /* default 0.375rem */
 }
 
 body {

@@ -37,11 +37,11 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
   }
 
   return (
-    <li className="border border-line rounded-md p-4">
+    <li className="border border-line rounded-md bg-surface shadow-sm p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-ink/50">Task {index + 1}</p>
         {isSolved && (
-          <span className="inline-flex items-center gap-1 text-xs text-accent">
+          <span className="inline-flex items-center gap-1 text-xs text-good">
             <CircleCheck size={14} /> Solved
           </span>
         )}

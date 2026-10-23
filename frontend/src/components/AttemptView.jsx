@@ -2,10 +2,10 @@ import { useState } from "react";
 import MarkdownContent from "./MarkdownContent";
 
 const VERDICTS = {
-  correct: { label: "Correct", className: "bg-accent/10 text-accent" },
+  correct: { label: "Correct", className: "bg-good/10 text-good" },
   partially_correct: {
     label: "Partially correct",
-    className: "bg-amber-100 text-amber-800",
+    className: "bg-partial/10 text-partial",
   },
   incorrect: { label: "Incorrect", className: "bg-warn/10 text-warn" },
 };

@@ -15,7 +15,7 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
   }
 
   return (
-    <div className="border border-line rounded-md bg-paper max-w-2xl mx-auto w-full">
+    <div className="border border-line rounded-md bg-surface shadow-sm max-w-2xl mx-auto w-full">
       {hasAttachments && (
         <AttachmentList
           documents={fileUpload.documents}

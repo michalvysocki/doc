@@ -2,7 +2,7 @@ import { FileText, X } from "lucide-react";
 
 function AttachmentCard({ name, typeLabel, thumbnail, onRemove }) {
   return (
-    <div className="flex items-center gap-2 bg-paper border border-line rounded-md px-3 py-2 shrink-0 max-w-45">
+    <div className="flex items-center gap-2 bg-surface border border-line rounded-md px-3 py-2 shrink-0 max-w-45">
       {thumbnail ? (
         <a
           href={thumbnail}

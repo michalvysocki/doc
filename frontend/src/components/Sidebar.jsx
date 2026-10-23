@@ -15,7 +15,7 @@ function Sidebar({
 
   if (!isOpen) {
     return (
-      <aside className="w-12 shrink-0 border-r border-line flex flex-col items-center gap-2 py-3">
+      <aside className="w-12 shrink-0 border-r border-line bg-shade flex flex-col items-center gap-2 py-3">
         <button
           type="button"
           onClick={() => setIsOpen(true)}
@@ -38,9 +38,9 @@ function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-line flex flex-col">
+    <aside className="w-64 shrink-0 border-r border-line bg-shade flex flex-col">
       <div className="flex items-center justify-between px-3 py-3">
-        <span className="text-sm font-semibold text-ink">Courses</span>
+        <span className="text-xl font-bold text-accent">Doc</span>
         <button
           type="button"
           onClick={() => setIsOpen(false)}
@@ -63,7 +63,10 @@ function Sidebar({
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-1">
+      <p className="px-6 pt-4 text-xs font-medium uppercase tracking-wide text-ink/50">
+        Courses
+      </p>
+      <nav className="flex-1 overflow-y-auto px-3 pb-3 pt-1 flex flex-col gap-1">
         {isLoading && <p className="text-xs text-ink/60 px-3">Loading...</p>}
         {error && <p className="text-xs text-warn px-3">{error}</p>}
         {!isLoading && !error && courses.length === 0 && (

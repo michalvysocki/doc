@@ -10,7 +10,7 @@ function TheoryTab() {
       {topic.explanation !== null ? (
         <>
           {error && <p className="text-sm text-warn">{error}</p>}
-          <div className="prose max-w-none text-ink mt-4">
+          <div className="prose prose-lg max-w-[70ch] text-ink mt-4 prose-headings:text-accent prose-a:text-accent prose-strong:text-ink">
             <MarkdownContent>{topic.explanation}</MarkdownContent>
           </div>
         </>

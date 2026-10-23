@@ -5,7 +5,7 @@ function CourseFilesList({ courseFiles }) {
   const { files, error, remove } = courseFiles;
 
   return (
-    <div className="mx-3 mb-2 rounded-md border border-line p-3 text-sm max-h-48 overflow-y-auto">
+    <div className="mx-3 mb-2 rounded-md border border-line bg-surface shadow-sm p-3 text-sm max-h-48 overflow-y-auto">
       <p className="font-medium text-ink">Course files</p>
       {files.length === 0 ? (
         <p className="mt-1 text-ink/60">

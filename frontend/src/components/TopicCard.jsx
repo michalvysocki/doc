@@ -9,7 +9,7 @@ function TopicCard({ topic }) {
     topic.tasks_total > 0 && topic.tasks_solved === topic.tasks_total;
 
   return (
-    <div className="border border-line rounded-md bg-paper">
+    <div className="border border-line rounded-md bg-surface shadow-sm">
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
@@ -37,7 +37,7 @@ function TopicCard({ topic }) {
           {isCompleted ? (
             <CircleCheck
               size={16}
-              className="text-accent"
+              className="text-good"
               aria-label="Topic completed"
             />
           ) : (
