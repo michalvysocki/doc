@@ -15,7 +15,7 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
   }
 
   return (
-    <div className="border border-line rounded-md bg-surface shadow-sm max-w-2xl mx-auto w-full focus-within:border-accent">
+    <div className="rounded-md bg-card max-w-2xl mx-auto w-full outline-2 outline-transparent focus-within:outline-accent/40">
       {hasAttachments && (
         <AttachmentList
           documents={fileUpload.documents}
@@ -44,26 +44,26 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
       </div>
 
       {fileUpload.isUploading && (
-        <p className="text-ink/60 text-xs px-4 pb-2">
+        <p className="type-caption text-faint px-4 pb-2">
           Uploading and indexing files...
         </p>
       )}
 
       {fileUpload.error && (
-        <p className="text-warn text-xs px-4 pb-2 whitespace-pre-line">
+        <p className="type-caption text-warn px-4 pb-2 whitespace-pre-line">
           {fileUpload.error}
         </p>
       )}
 
       {chat.error && (
         <div className="flex items-center justify-between gap-2 px-4 pb-2">
-          <p className="text-warn text-xs">{chat.error}</p>
+          <p className="type-caption text-warn">{chat.error}</p>
           {chat.canRetry && (
             <button
               type="button"
               onClick={chat.handleRetry}
               disabled={chat.isLoading}
-              className="btn-secondary shrink-0 px-2 py-1 text-xs"
+              className="btn-secondary btn-sm shrink-0"
             >
               Retry
             </button>

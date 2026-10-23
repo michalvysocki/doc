@@ -10,15 +10,15 @@ function TheoryTab() {
     <>
       {topic.explanation !== null ? (
         <>
-          {error && <p className="text-sm text-warn">{error}</p>}
-          <div className="prose prose-lg max-w-[70ch] text-ink mt-4 prose-headings:text-accent prose-h1:text-xl prose-h2:text-xl prose-h3:text-lg prose-a:text-accent prose-strong:text-ink">
+          {error && <p className="type-body text-warn">{error}</p>}
+          <div className="prose prose-base sm:prose-lg max-w-[70ch] mt-4 prose-h1:text-xl prose-h2:text-xl prose-h3:text-lg">
             <MarkdownContent>{topic.explanation}</MarkdownContent>
           </div>
         </>
       ) : error ? (
-        <p className="text-sm text-warn">{error}</p>
+        <p className="type-body text-warn">{error}</p>
       ) : (
-        <p className="flex items-center gap-2 text-sm text-ink/60">
+        <p className="flex items-center gap-2 type-body text-muted">
           <LoaderCircle size={16} className="animate-spin text-accent" />
           Writing the lesson, this can take a few minutes...
         </p>
@@ -26,13 +26,15 @@ function TheoryTab() {
 
       {topic.subtopics.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-lg font-semibold text-ink">Subtopics</h2>
+          <h2 className="type-caption uppercase tracking-wide text-faint">
+            Subtopics
+          </h2>
           <ul className="mt-2 flex flex-col gap-2">
             {topic.subtopics.map((subtopic) => (
               <li key={subtopic.id}>
                 <Link
                   to={`/courses/${course.id}/topics/${subtopic.id}`}
-                  className="block border border-line rounded-md bg-surface px-4 py-3 text-ink hover:border-accent/40"
+                  className="block rounded-md bg-card px-4 py-3 type-item text-ink hover:bg-line"
                 >
                   {subtopic.title}
                 </Link>

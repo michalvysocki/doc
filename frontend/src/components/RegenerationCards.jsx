@@ -20,30 +20,23 @@ function RegenerationCards({ regenerations }) {
   return (
     <div className="px-4 pb-2 flex flex-col gap-2">
       {proposals.map((proposal) => (
-        <div
-          key={proposal.id}
-          className="rounded-md border border-accent/40 bg-accent/5 p-3 text-sm"
-        >
-          <p className="font-medium text-ink">
-            {TEXTS[proposal.kind].question}
-          </p>
+        <div key={proposal.id} className="rounded-md bg-accent/5 p-3 type-body">
+          <p className="type-label text-ink">{TEXTS[proposal.kind].question}</p>
           {proposal.instructions && (
-            <p className="mt-1 text-ink/70">
+            <p className="mt-1 text-muted">
               Instructions: “{proposal.instructions}”
             </p>
           )}
           {proposal.use_files && (
-            <p className="mt-1 text-ink/70">
-              Uses the course's uploaded files.
-            </p>
+            <p className="mt-1 text-muted">Uses the course's uploaded files.</p>
           )}
-          <p className="mt-1 text-ink/70">{TEXTS[proposal.kind].warning}</p>
+          <p className="mt-1 text-muted">{TEXTS[proposal.kind].warning}</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={() => confirm(proposal)}
               disabled={busy !== null}
-              className="btn-primary px-3 py-1.5"
+              className="btn-primary"
             >
               {isBusy(proposal, "confirm") ? "Regenerating..." : "Regenerate"}
             </button>
@@ -51,14 +44,14 @@ function RegenerationCards({ regenerations }) {
               type="button"
               onClick={() => cancel(proposal)}
               disabled={busy !== null}
-              className="btn-secondary px-3 py-1.5"
+              className="btn-secondary"
             >
               {isBusy(proposal, "cancel") ? "Cancelling..." : "Cancel"}
             </button>
           </div>
         </div>
       ))}
-      {error && <p className="text-sm text-warn">{error}</p>}
+      {error && <p className="type-body text-warn">{error}</p>}
     </div>
   );
 }

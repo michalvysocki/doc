@@ -22,19 +22,19 @@ function PreviewTree({ nodes }) {
     <ul className="flex flex-col gap-1">
       {nodes.map((node, index) => (
         <li key={node.topic_id ?? `new-${index}`}>
-          <div className="flex flex-wrap items-center gap-x-2 text-sm">
+          <div className="flex flex-wrap items-center gap-x-2 type-body">
             {node.topic_id ? (
               <Check size={14} className="text-accent shrink-0" />
             ) : (
-              <Plus size={14} className="text-ink/60 shrink-0" />
+              <Plus size={14} className="text-faint shrink-0" />
             )}
             <span className="text-ink">{node.title}</span>
             {node.old_title && (
-              <span className="text-xs text-ink/50">
+              <span className="type-caption text-faint">
                 renamed from “{node.old_title}”
               </span>
             )}
-            <span className="text-xs text-ink/50">
+            <span className="type-caption text-faint">
               {node.topic_id ? describeProgress(node) : "new"}
             </span>
           </div>
@@ -54,9 +54,9 @@ function CourseRebuildPreview({ courseRebuild }) {
   const isBusy = busyAction !== null;
 
   return (
-    <section className="rounded-md border border-accent/40 bg-accent/5 p-4">
-      <h2 className="font-semibold text-ink">Proposed new course map</h2>
-      <p className="text-sm text-ink/70 mt-1">
+    <section className="rounded-md bg-accent/5 p-4">
+      <h2 className="type-item text-ink">Proposed new course map</h2>
+      <p className="type-body text-muted mt-1">
         Keeps {rebuild.kept_count} topics, adds {rebuild.new_count}, deletes{" "}
         {rebuild.deleted.length}.
       </p>
@@ -68,9 +68,9 @@ function CourseRebuildPreview({ courseRebuild }) {
       <SourcesList sources={rebuild.sources} className="mt-3" />
 
       {rebuild.deleted.length > 0 && (
-        <div className="mt-4 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm">
-          <p className="font-medium text-ink">Will be deleted</p>
-          <ul className="mt-1 text-ink/70">
+        <div className="mt-4 rounded-md bg-warn/5 p-3 type-body">
+          <p className="type-label text-ink">Will be deleted</p>
+          <ul className="mt-1 text-muted">
             {rebuild.deleted.map((topic) => (
               <li key={topic.topic_id}>
                 {topic.title}
@@ -78,7 +78,7 @@ function CourseRebuildPreview({ courseRebuild }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-ink/70">This cannot be undone.</p>
+          <p className="mt-1 text-muted">This cannot be undone.</p>
         </div>
       )}
 
@@ -87,7 +87,7 @@ function CourseRebuildPreview({ courseRebuild }) {
           type="button"
           onClick={apply}
           disabled={isBusy}
-          className="btn-primary px-3 py-1.5"
+          className="btn-primary"
         >
           {busyAction === "apply" ? "Applying..." : "Apply"}
         </button>
@@ -95,12 +95,12 @@ function CourseRebuildPreview({ courseRebuild }) {
           type="button"
           onClick={discard}
           disabled={isBusy}
-          className="btn-secondary px-3 py-1.5"
+          className="btn-secondary"
         >
           {busyAction === "discard" ? "Discarding..." : "Discard"}
         </button>
       </div>
-      {error && <p className="text-sm text-warn mt-2">{error}</p>}
+      {error && <p className="type-body text-warn mt-2">{error}</p>}
     </section>
   );
 }

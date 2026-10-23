@@ -1,4 +1,4 @@
-function EmptyState({ icon: Icon, title, text, compact = false }) {
+function EmptyState({ icon: Icon, title, text, action, compact = false }) {
   return (
     <div
       className={`flex flex-col items-center text-center ${compact ? "gap-1 py-3" : "gap-2 py-10"}`}
@@ -10,16 +10,17 @@ function EmptyState({ icon: Icon, title, text, compact = false }) {
           <Icon size={compact ? 16 : 22} />
         </span>
       )}
-      <p className={`font-medium text-ink ${compact ? "text-sm" : ""}`}>
+      <p className={`${compact ? "type-label" : "type-item"} text-ink`}>
         {title}
       </p>
       {text && (
         <p
-          className={`text-ink/60 ${compact ? "text-xs" : "text-sm"} max-w-xs`}
+          className={`${compact ? "type-caption" : "type-body"} text-muted max-w-xs`}
         >
           {text}
         </p>
       )}
+      {action && <div className="mt-2">{action}</div>}
     </div>
   );
 }

@@ -15,7 +15,7 @@ function TasksTab() {
 
   if (!hasLesson) {
     return (
-      <p className="text-sm text-ink/60">
+      <p className="type-body text-muted">
         Tasks will be created as soon as the lesson is ready...
       </p>
     );
@@ -25,14 +25,14 @@ function TasksTab() {
   }
   if (status === "generating") {
     return (
-      <p className="flex items-center gap-2 text-sm text-ink/60">
+      <p className="flex items-center gap-2 type-body text-muted">
         <LoaderCircle size={16} className="animate-spin text-accent" />
         Creating tasks, this can take a few minutes...
       </p>
     );
   }
   if (status === "error") {
-    return <p className="text-sm text-warn">{error}</p>;
+    return <p className="type-body text-warn">{error}</p>;
   }
 
   const solvedCount = tasks.filter((task) =>
@@ -42,14 +42,14 @@ function TasksTab() {
   return (
     <section>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-ink/60">
+        <p className="type-body text-muted">
           {solvedCount} / {tasks.length} solved
         </p>
       </div>
 
-      {error && <p className="text-sm text-warn mt-2">{error}</p>}
+      {error && <p className="type-body text-warn mt-2">{error}</p>}
 
-      <ol className="mt-4 flex flex-col gap-3">
+      <ol className="mt-4 flex flex-col gap-4">
         {tasks.map((task, index) => (
           <TaskCard
             key={task.id}

@@ -37,17 +37,17 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
   }
 
   return (
-    <li className="border border-line rounded-md bg-surface p-4">
+    <li className="rounded-md bg-card p-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-ink/50">Task {index + 1}</p>
+        <p className="type-caption text-faint">Task {index + 1}</p>
         {isSolved && (
-          <span className="inline-flex items-center gap-1 text-xs text-good">
+          <span className="inline-flex items-center gap-1 type-caption text-good">
             <CircleCheck size={14} /> Solved
           </span>
         )}
       </div>
 
-      <div className="prose prose-sm max-w-none text-ink mt-1">
+      <div className="prose prose-sm max-w-none mt-1">
         <MarkdownContent>{task.question}</MarkdownContent>
       </div>
 
@@ -55,7 +55,7 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
         <button
           type="button"
           onClick={() => setShowEarlier((prev) => !prev)}
-          className="mt-3 text-xs text-ink/60 hover:text-ink"
+          className="mt-3 type-caption text-muted hover:text-ink"
         >
           {showEarlier ? "Hide" : "Show"} {earlier.length} earlier attempt
           {earlier.length > 1 ? "s" : ""}
@@ -83,21 +83,17 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
           placeholder={latest ? "Try again..." : "Write your answer..."}
           rows={5}
           disabled={isSubmitting}
-          className="w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+          className="w-full rounded-md bg-paper px-3 py-2 type-body text-ink outline-2 outline-transparent focus:outline-accent/40"
         />
         <div className="flex items-center justify-between mt-2">
-          <span className="text-xs text-ink/60">
+          <span className="type-caption text-faint">
             {isSubmitting && "Grading your answer..."}
           </span>
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="btn-primary px-4 py-1.5"
-          >
+          <button type="submit" disabled={!canSubmit} className="btn-primary">
             Submit
           </button>
         </div>
-        {error && <p className="text-xs text-warn mt-1">{error}</p>}
+        {error && <p className="type-caption text-warn mt-1">{error}</p>}
       </form>
     </li>
   );

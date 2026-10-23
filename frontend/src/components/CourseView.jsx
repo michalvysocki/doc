@@ -12,7 +12,7 @@ function CourseView() {
 
   return (
     <div className="max-w-3xl mx-auto w-full">
-      <h1 className="text-2xl font-semibold text-ink">{course.title}</h1>
+      <h1 className="type-title text-ink">{course.title}</h1>
 
       <div className="mt-3">
         <div className="h-2 rounded-full bg-line overflow-hidden">
@@ -21,16 +21,13 @@ function CourseView() {
             style={{ width: `${percent}%` }}
           />
         </div>
-        <p className="text-xs text-ink/60 mt-1">
+        <p className="type-caption text-faint mt-1">
           {topics_completed} / {topics_total} topics completed
         </p>
       </div>
 
       {course.progress.reviews_due > 0 && (
-        <Link
-          to={`/courses/${course.id}/review`}
-          className="btn-primary mt-4 px-3 py-1.5"
-        >
+        <Link to={`/courses/${course.id}/review`} className="btn-primary mt-4">
           <RotateCcw size={14} />
           {course.progress.reviews_due}{" "}
           {course.progress.reviews_due === 1 ? "task" : "tasks"} to review →

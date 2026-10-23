@@ -14,7 +14,8 @@ function FileInput({ inputRef, onChange, accept }) {
       <button
         type="button"
         onClick={() => inputRef.current.click()}
-        className="text-ink/50 hover:text-accent transition-colors p-2"
+        aria-label="Attach files"
+        className="p-2 rounded-md text-faint hover:text-ink hover:bg-line"
       >
         <Paperclip size={18} />
       </button>

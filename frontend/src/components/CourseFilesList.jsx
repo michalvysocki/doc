@@ -6,8 +6,8 @@ function CourseFilesList({ courseFiles }) {
   const { files, error, remove } = courseFiles;
 
   return (
-    <div className="mx-3 mb-3 rounded-md border border-line bg-surface p-3 text-sm max-h-48 overflow-y-auto">
-      <p className="font-medium text-ink">Course files</p>
+    <div className="mx-3 mb-3 rounded-md bg-card p-3 type-body max-h-48 overflow-y-auto">
+      <p className="type-label text-ink">Course files</p>
       {files.length === 0 ? (
         <EmptyState
           compact
@@ -35,7 +35,7 @@ function CourseFilesList({ courseFiles }) {
                     />
                   </a>
                 ) : (
-                  <FileText size={14} className="shrink-0 text-ink/50" />
+                  <FileText size={14} className="shrink-0 text-faint" />
                 )}
                 <span
                   className="flex-1 truncate text-ink"
@@ -43,21 +43,21 @@ function CourseFilesList({ courseFiles }) {
                 >
                   {file.filename}
                 </span>
-                <span className="text-xs text-ink/50">
+                <span className="type-caption text-faint">
                   {new Date(file.created_at).toLocaleDateString()}
                 </span>
                 <button
                   type="button"
                   onClick={() => remove(file)}
                   aria-label={`Delete ${file.filename}`}
-                  className="p-1 rounded-md text-ink/50 hover:text-warn hover:bg-hover"
+                  className="p-1 rounded-md text-faint hover:text-warn hover:bg-line"
                 >
                   <Trash2 size={14} />
                 </button>
               </div>
               {file.summary && (
                 <p
-                  className="ml-8 mt-0.5 text-xs text-ink/60 line-clamp-2"
+                  className="ml-8 mt-0.5 type-caption text-muted line-clamp-2"
                   title={file.summary}
                 >
                   {file.summary}

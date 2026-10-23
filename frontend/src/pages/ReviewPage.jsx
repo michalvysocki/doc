@@ -21,15 +21,17 @@ function ReviewPage() {
     <div className="max-w-3xl mx-auto w-full">
       <Link
         to={`/courses/${course.id}`}
-        className="inline-flex items-center gap-1 text-sm text-ink/60 hover:text-accent"
+        className="inline-flex items-center gap-1 type-body text-muted hover:text-ink"
       >
         <ArrowLeft size={14} />
         {course.title}
       </Link>
-      <h1 className="text-2xl font-semibold text-ink mt-2">Review</h1>
+      <h1 className="type-title text-ink mt-2">Review</h1>
 
       {status === "loading" && <Skeleton lines={4} className="mt-6" />}
-      {status === "error" && <p className="text-sm text-warn mt-4">{error}</p>}
+      {status === "error" && (
+        <p className="type-body text-warn mt-4">{error}</p>
+      )}
 
       {status === "ready" && (
         <>
@@ -40,7 +42,7 @@ function ReviewPage() {
               text="Nothing to review today. Tasks come back here a few days after you answer them."
             />
           ) : (
-            <p className="text-sm text-ink/60 mt-1">
+            <p className="type-body text-muted mt-1">
               {remaining > 0
                 ? `${remaining} ${remaining === 1 ? "task" : "tasks"} left to review today`
                 : "All done for today, nice work."}
@@ -50,15 +52,15 @@ function ReviewPage() {
           <ol className="mt-4 flex flex-col gap-4">
             {tasks.map((task) => (
               <li key={task.id}>
-                <div className="flex items-center gap-2 mb-1 text-sm">
+                <div className="flex items-center gap-2 mb-1 type-body">
                   <Link
                     to={`/courses/${course.id}/topics/${task.topic_id}`}
-                    className="text-ink/70 hover:text-accent"
+                    className="text-muted hover:text-ink"
                   >
                     {task.topic_title}
                   </Link>
                   {reviewedIds.has(task.id) && (
-                    <span className="inline-flex items-center gap-1 text-xs text-accent">
+                    <span className="inline-flex items-center gap-1 type-caption text-accent">
                       <CircleCheck size={14} />
                       Reviewed
                     </span>

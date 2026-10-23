@@ -59,7 +59,7 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="border border-line rounded-md bg-surface shadow-sm max-w-2xl mx-auto w-full focus-within:border-accent"
+      className="rounded-md bg-card max-w-2xl mx-auto w-full outline-2 outline-transparent focus-within:outline-accent/40"
     >
       <textarea
         value={prompt}
@@ -92,28 +92,24 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
               accept={ACCEPTED_TYPES}
             />
           )}
-          <span className="text-xs text-ink/60">
+          <span className="type-caption text-faint">
             {isLoading &&
               (files.length > 0
                 ? "Reading your files and creating the topic map, this can take a few minutes..."
                 : "Creating the topic map, this can take a few minutes...")}
           </span>
         </div>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="btn-primary px-4 py-2"
-        >
+        <button type="submit" disabled={!canSubmit} className="btn-primary">
           Create course
         </button>
       </div>
 
       {fileError && (
-        <p className="text-warn text-xs px-4 pb-2 whitespace-pre-line">
+        <p className="type-caption text-warn px-4 pb-2 whitespace-pre-line">
           {fileError}
         </p>
       )}
-      {error && <p className="text-warn text-xs px-4 pb-2">{error}</p>}
+      {error && <p className="type-caption text-warn px-4 pb-2">{error}</p>}
     </form>
   );
 }

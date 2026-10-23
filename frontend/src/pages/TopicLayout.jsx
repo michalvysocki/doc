@@ -10,10 +10,10 @@ import useTopic from "../hooks/useTopic";
 import Skeleton from "../components/Skeleton";
 
 function tabClass({ isActive }) {
-  return `px-3 py-2 text-sm border-b-2 -mb-px ${
+  return `px-3 py-2 border-b-2 -mb-px ${
     isActive
-      ? "border-accent text-accent font-medium"
-      : "border-transparent text-ink/60 hover:text-ink"
+      ? "border-accent type-label text-accent"
+      : "border-transparent type-body text-muted hover:text-ink"
   }`;
 }
 
@@ -24,7 +24,7 @@ function TopicLayout() {
 
   if (topic === null) {
     return error ? (
-      <p className="text-sm text-warn">{error}</p>
+      <p className="type-body text-warn">{error}</p>
     ) : (
       <div className="max-w-3xl mx-auto w-full">
         <Skeleton lines={2} className="w-2/3" />
@@ -35,8 +35,8 @@ function TopicLayout() {
 
   return (
     <article className="max-w-3xl mx-auto w-full">
-      <nav className="flex flex-wrap items-center gap-1 text-sm text-ink/60">
-        <Link to={`/courses/${course.id}`} className="hover:text-accent">
+      <nav className="flex flex-wrap items-center gap-1 type-body text-muted">
+        <Link to={`/courses/${course.id}`} className="hover:text-ink">
           {course.title}
         </Link>
         {topic.path.map((link) => (
@@ -44,7 +44,7 @@ function TopicLayout() {
             <ChevronRight size={14} />
             <Link
               to={`/courses/${course.id}/topics/${link.id}`}
-              className="hover:text-accent"
+              className="hover:text-ink"
             >
               {link.title}
             </Link>
@@ -52,8 +52,8 @@ function TopicLayout() {
         ))}
       </nav>
 
-      <h1 className="text-2xl font-semibold text-ink mt-2">{topic.title}</h1>
-      <p className="text-ink/70 mt-1">{topic.description}</p>
+      <h1 className="type-title text-ink mt-2">{topic.title}</h1>
+      <p className="type-body text-muted mt-1">{topic.description}</p>
 
       <nav className="flex gap-2 mt-4 border-b border-line">
         <NavLink to="." end className={tabClass}>

@@ -14,6 +14,8 @@ import useRegenerations from "../hooks/useRegenerations";
 import useCourseFiles from "../hooks/useCourseFiles";
 import ChatPanel from "../components/ChatPanel";
 import Skeleton from "../components/Skeleton";
+import EmptyState from "../components/EmptyState";
+import { CircleAlert } from "lucide-react";
 
 function CourseLayout() {
   const { courseId } = useParams();
@@ -72,9 +74,22 @@ function CourseLayout() {
 
   return (
     <>
-      <main ref={mainRef} className="flex-1 overflow-y-auto p-6">
+      <main ref={mainRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
         {error ? (
-          <p className="text-sm text-warn">{error}</p>
+          <EmptyState
+            icon={CircleAlert}
+            title="Couldn't load the course"
+            text={error}
+            action={
+              <button
+                type="button"
+                onClick={() => setCourseVersion((version) => version + 1)}
+                className="btn-secondary"
+              >
+                Try again
+              </button>
+            }
+          />
         ) : course === null ? (
           <div className="max-w-3xl mx-auto w-full">
             <Skeleton lines={1} className="w-1/2" />
@@ -108,9 +123,7 @@ function CourseLayout() {
               }
         }
         placeholder={
-          topicId
-            ? "Ask about the lesson, or ask to regenerate it, add tasks or subtopics..."
-            : "Ask about the course, or ask to add, rename, move, delete topics or rebuild it..."
+          topicId ? "Ask about the lesson..." : "Ask about the course..."
         }
       />
     </>

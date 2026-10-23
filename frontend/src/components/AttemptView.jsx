@@ -28,36 +28,36 @@ function AttemptView({ attempt, onRegrade }) {
   }
 
   return (
-    <div className="mt-3 rounded-md bg-shade p-3">
-      <p className="text-sm text-ink whitespace-pre-wrap">{attempt.answer}</p>
+    <div className="mt-3 rounded-md bg-paper p-3">
+      <p className="type-body text-ink whitespace-pre-wrap">{attempt.answer}</p>
 
       {verdict ? (
         <>
           <span
-            className={`inline-block mt-2 rounded-full px-2 py-0.5 text-xs font-medium ${verdict.className}`}
+            className={`inline-block mt-2 rounded-full px-2 py-0.5 type-caption ${verdict.className}`}
           >
             {verdict.label}
           </span>
-          <div className="prose prose-sm max-w-none text-ink mt-2">
+          <div className="prose prose-sm max-w-none mt-2">
             <MarkdownContent>{attempt.feedback}</MarkdownContent>
           </div>
         </>
       ) : (
         <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs text-ink/60">
+          <span className="type-caption text-faint">
             Your answer was saved, but grading failed.
           </span>
           <button
             type="button"
             onClick={handleRegrade}
             disabled={isGrading}
-            className="text-xs text-accent hover:underline disabled:opacity-40"
+            className="type-caption text-accent hover:underline disabled:opacity-40"
           >
             {isGrading ? "Grading..." : "Grade again"}
           </button>
         </div>
       )}
-      {error && <p className="text-xs text-warn mt-1">{error}</p>}
+      {error && <p className="type-caption text-warn mt-1">{error}</p>}
     </div>
   );
 }

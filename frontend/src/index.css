@@ -3,12 +3,13 @@
 
 @theme {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, Menlo, monospace;
   --color-paper: #fefcf9; /* light cream vanilla */
   --color-ink: #1c1b19;
-  --color-line: #f0e9e0;
-  --color-surface: #ffffff; /* cards and panels on top of the page */
-  --color-shade: #fcf8f2; /* sidebar */
-  --color-hover: #f3ece2; /* hover on light backgrounds */
+  --color-muted: rgb(28 27 25 / 0.7); /* secondary text */
+  --color-faint: rgb(28 27 25 / 0.5); /* labels, counters, captions */
+  --color-line: #f0e9e0; /* lines, hover, skeleton */
+  --color-card: #f8f3ec; /* cards, inputs, sidebar */
   --color-accent: #182f53; /* deep ocean */
   --color-warn: #b3542b; /* incorrect, errors */
   --color-good: #3d7a57; /* correct, completed */
@@ -21,22 +22,89 @@ body {
   min-height: 100vh;
 }
 
+/* The five text styles; colour is chosen separately (ink, muted, faint or a state colour). */
+@utility type-title {
+  @apply text-2xl font-semibold;
+}
+
+@utility type-item {
+  @apply text-base font-medium;
+}
+
+@utility type-label {
+  @apply text-sm font-medium;
+}
+
+@utility type-body {
+  @apply text-sm font-normal;
+}
+
+@utility type-caption {
+  @apply text-xs font-normal;
+}
+
 @utility btn-primary {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-sm text-paper hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent;
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 bg-accent text-sm text-paper hover:brightness-90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100;
 }
 
 @utility btn-secondary {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-surface text-sm text-ink hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface;
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 border border-line bg-paper text-sm text-ink hover:bg-line disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-paper;
 }
 
 @utility btn-danger {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-warn text-sm text-paper hover:bg-warn/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-warn;
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 bg-warn text-sm text-paper hover:brightness-90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100;
+}
+
+/* Smaller button size, for buttons inside a line of text such as an error message. */
+@utility btn-sm {
+  @apply px-2 py-1 text-xs;
+}
+
+/* Typography plugin colours mapped to the app palette (it uses cool greys by default). */
+.prose {
+  --tw-prose-body: var(--color-ink);
+  --tw-prose-headings: var(--color-accent);
+  --tw-prose-lead: var(--color-muted);
+  --tw-prose-links: var(--color-accent);
+  --tw-prose-bold: var(--color-ink);
+  --tw-prose-counters: var(--color-faint);
+  --tw-prose-bullets: var(--color-faint);
+  --tw-prose-hr: var(--color-line);
+  --tw-prose-quotes: var(--color-muted);
+  --tw-prose-quote-borders: var(--color-line);
+  --tw-prose-captions: var(--color-faint);
+  --tw-prose-kbd: var(--color-ink);
+  --tw-prose-code: var(--color-ink);
+  --tw-prose-pre-code: #abb2bf; /* same as the oneDark code theme */
+  --tw-prose-pre-bg: #282c34;
+  --tw-prose-th-borders: var(--color-line);
+  --tw-prose-td-borders: var(--color-line);
+}
+
+/* Prose styling for code that the typography plugin does differently. */
+.prose pre {
+  border-radius: var(--radius-md);
+}
+.prose pre:has(> div) {
+  /* SyntaxHighlighter draws its own box inside the prose <pre>. */
+  background: transparent;
+  padding: 0;
+}
+.prose code:not(pre code) {
+  background-color: var(--color-line);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+.prose code:not(pre code)::before,
+.prose code:not(pre code)::after {
+  content: none;
 }
 
 @layer base {
   a,
   button {
-    transition-property: color, background-color, border-color, opacity;
+    transition-property: color, background-color, border-color, opacity, filter;
     transition-duration: 150ms;
   }
 

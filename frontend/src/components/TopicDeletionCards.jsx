@@ -16,20 +16,17 @@ function TopicDeletionCards({ topicDeletions }) {
   return (
     <div className="px-4 pb-2 flex flex-col gap-2">
       {deletions.map((deletion) => (
-        <div
-          key={deletion.id}
-          className="rounded-md border border-warn/40 bg-warn/5 p-3 text-sm"
-        >
-          <p className="font-medium text-ink">
+        <div key={deletion.id} className="rounded-md bg-warn/5 p-3 type-body">
+          <p className="type-label text-ink">
             Delete “{deletion.topic_title}”?
           </p>
-          <p className="mt-1 text-ink/70">{describeLoss(deletion)}</p>
+          <p className="mt-1 text-muted">{describeLoss(deletion)}</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={() => confirm(deletion)}
               disabled={busy !== null}
-              className="btn-danger px-3 py-1.5"
+              className="btn-danger"
             >
               {isBusy(deletion, "confirm") ? "Deleting..." : "Delete"}
             </button>
@@ -37,14 +34,14 @@ function TopicDeletionCards({ topicDeletions }) {
               type="button"
               onClick={() => cancel(deletion)}
               disabled={busy !== null}
-              className="btn-secondary px-3 py-1.5"
+              className="btn-secondary"
             >
               {isBusy(deletion, "cancel") ? "Cancelling..." : "Cancel"}
             </button>
           </div>
         </div>
       ))}
-      {error && <p className="text-sm text-warn">{error}</p>}
+      {error && <p className="type-body text-warn">{error}</p>}
     </div>
   );
 }
