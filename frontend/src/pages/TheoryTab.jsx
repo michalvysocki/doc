@@ -11,7 +11,7 @@ function TheoryTab() {
       {topic.explanation !== null ? (
         <>
           {error && <p className="text-sm text-warn">{error}</p>}
-          <div className="prose prose-lg max-w-[70ch] text-ink mt-4 prose-headings:text-accent prose-a:text-accent prose-strong:text-ink">
+          <div className="prose prose-lg max-w-[70ch] text-ink mt-4 prose-headings:text-accent prose-h1:text-xl prose-h2:text-xl prose-h3:text-lg prose-a:text-accent prose-strong:text-ink">
             <MarkdownContent>{topic.explanation}</MarkdownContent>
           </div>
         </>
@@ -32,7 +32,7 @@ function TheoryTab() {
               <li key={subtopic.id}>
                 <Link
                   to={`/courses/${course.id}/topics/${subtopic.id}`}
-                  className="block border border-line rounded-md px-4 py-3 text-ink hover:bg-line/50"
+                  className="block border border-line rounded-md bg-surface px-4 py-3 text-ink hover:border-accent/40"
                 >
                   {subtopic.title}
                 </Link>

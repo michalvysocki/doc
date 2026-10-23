@@ -28,13 +28,13 @@ function AttemptView({ attempt, onRegrade }) {
   }
 
   return (
-    <div className="mt-3 rounded-md bg-line/30 p-3">
+    <div className="mt-3 rounded-md bg-shade p-3">
       <p className="text-sm text-ink whitespace-pre-wrap">{attempt.answer}</p>
 
       {verdict ? (
         <>
           <span
-            className={`inline-block mt-2 rounded px-2 py-0.5 text-xs font-medium ${verdict.className}`}
+            className={`inline-block mt-2 rounded-full px-2 py-0.5 text-xs font-medium ${verdict.className}`}
           >
             {verdict.label}
           </span>

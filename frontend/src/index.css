@@ -8,6 +8,7 @@
   --color-line: #f0e9e0;
   --color-surface: #ffffff; /* cards and panels on top of the page */
   --color-shade: #fcf8f2; /* sidebar */
+  --color-hover: #f3ece2; /* hover on light backgrounds */
   --color-accent: #182f53; /* deep ocean */
   --color-warn: #b3542b; /* incorrect, errors */
   --color-good: #3d7a57; /* correct, completed */
@@ -18,6 +19,18 @@
 body {
   background-color: var(--color-paper);
   min-height: 100vh;
+}
+
+@utility btn-primary {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-accent text-sm text-paper hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent;
+}
+
+@utility btn-secondary {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line bg-surface text-sm text-ink hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface;
+}
+
+@utility btn-danger {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-md bg-warn text-sm text-paper hover:bg-warn/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-warn;
 }
 
 @layer base {

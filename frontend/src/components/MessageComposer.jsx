@@ -63,7 +63,7 @@ function MessageComposer({ chat, fileUpload, placeholder }) {
               type="button"
               onClick={chat.handleRetry}
               disabled={chat.isLoading}
-              className="shrink-0 rounded-md border border-line px-2 py-1 text-xs text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-secondary shrink-0 px-2 py-1 text-xs"
             >
               Retry
             </button>

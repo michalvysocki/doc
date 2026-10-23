@@ -37,7 +37,7 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
   }
 
   return (
-    <li className="border border-line rounded-md bg-surface shadow-sm p-4">
+    <li className="border border-line rounded-md bg-surface p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-ink/50">Task {index + 1}</p>
         {isSolved && (
@@ -92,7 +92,7 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="bg-accent hover:bg-accent/90 text-paper rounded-md px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent"
+            className="btn-primary px-4 py-1.5"
           >
             Submit
           </button>

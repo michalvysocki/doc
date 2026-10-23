@@ -12,7 +12,7 @@ function CourseView() {
 
   return (
     <div className="max-w-3xl mx-auto w-full">
-      <h1 className="text-xl font-semibold text-ink">{course.title}</h1>
+      <h1 className="text-2xl font-semibold text-ink">{course.title}</h1>
 
       <div className="mt-3">
         <div className="h-2 rounded-full bg-line overflow-hidden">
@@ -29,7 +29,7 @@ function CourseView() {
       {course.progress.reviews_due > 0 && (
         <Link
           to={`/courses/${course.id}/review`}
-          className="inline-flex items-center gap-2 mt-4 rounded-md bg-accent px-3 py-1.5 text-sm text-paper hover:opacity-90"
+          className="btn-primary mt-4 px-3 py-1.5"
         >
           <RotateCcw size={14} />
           {course.progress.reviews_due}{" "}

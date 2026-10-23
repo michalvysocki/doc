@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import Skeleton from "./Skeleton";
+import { isWiderThan } from "../utils/screen";
 
 function Sidebar({
   courses,
@@ -12,7 +13,7 @@ function Sidebar({
   error,
   disabled,
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(() => isWiderThan(768));
 
   if (!isOpen) {
     return (
@@ -21,7 +22,7 @@ function Sidebar({
           type="button"
           onClick={() => setIsOpen(true)}
           aria-label="Open sidebar"
-          className="p-2 rounded-md text-ink/70 hover:bg-line/50"
+          className="p-2 rounded-md text-ink/70 hover:bg-hover"
         >
           <PanelLeftOpen size={18} />
         </button>
@@ -30,7 +31,7 @@ function Sidebar({
           onClick={onNewCourse}
           disabled={disabled}
           aria-label="New course"
-          className="p-2 rounded-md text-ink/70 hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="p-2 rounded-md text-ink/70 hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Plus size={18} />
         </button>
@@ -46,7 +47,7 @@ function Sidebar({
           type="button"
           onClick={() => setIsOpen(false)}
           aria-label="Close sidebar"
-          className="p-2 rounded-md text-ink/70 hover:bg-line/50"
+          className="p-2 rounded-md text-ink/70 hover:bg-hover"
         >
           <PanelLeftClose size={18} />
         </button>
@@ -57,9 +58,13 @@ function Sidebar({
           type="button"
           onClick={onNewCourse}
           disabled={disabled}
-          className="w-full flex items-center gap-2 rounded-md border border-line px-3 py-2 text-sm text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed ${
+            activeCourseId === null
+              ? "bg-accent/10 text-accent"
+              : "text-ink hover:bg-hover"
+          }`}
         >
-          <Plus size={16} />
+          <Plus size={16} className="text-accent" />
           New course
         </button>
       </div>
@@ -80,7 +85,7 @@ function Sidebar({
           <div
             key={course.id}
             className={`group flex items-center rounded-md ${
-              course.id === activeCourseId ? "bg-accent/10" : "hover:bg-line/50"
+              course.id === activeCourseId ? "bg-accent/10" : "hover:bg-hover"
             }`}
           >
             <button

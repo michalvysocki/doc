@@ -87,7 +87,7 @@ function CourseRebuildPreview({ courseRebuild }) {
           type="button"
           onClick={apply}
           disabled={isBusy}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm text-paper hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="btn-primary px-3 py-1.5"
         >
           {busyAction === "apply" ? "Applying..." : "Apply"}
         </button>
@@ -95,7 +95,7 @@ function CourseRebuildPreview({ courseRebuild }) {
           type="button"
           onClick={discard}
           disabled={isBusy}
-          className="rounded-md border border-line px-3 py-1.5 text-sm text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="btn-secondary px-3 py-1.5"
         >
           {busyAction === "discard" ? "Discarding..." : "Discard"}
         </button>

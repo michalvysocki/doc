@@ -26,7 +26,7 @@ function ReviewPage() {
         <ArrowLeft size={14} />
         {course.title}
       </Link>
-      <h1 className="text-xl font-semibold text-ink mt-2">Review</h1>
+      <h1 className="text-2xl font-semibold text-ink mt-2">Review</h1>
 
       {status === "loading" && <Skeleton lines={4} className="mt-6" />}
       {status === "error" && <p className="text-sm text-warn mt-4">{error}</p>}

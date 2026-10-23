@@ -29,7 +29,7 @@ function TopicDeletionCards({ topicDeletions }) {
               type="button"
               onClick={() => confirm(deletion)}
               disabled={busy !== null}
-              className="rounded-md bg-warn px-3 py-1.5 text-paper hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-danger px-3 py-1.5"
             >
               {isBusy(deletion, "confirm") ? "Deleting..." : "Delete"}
             </button>
@@ -37,7 +37,7 @@ function TopicDeletionCards({ topicDeletions }) {
               type="button"
               onClick={() => cancel(deletion)}
               disabled={busy !== null}
-              className="rounded-md border border-line px-3 py-1.5 text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-secondary px-3 py-1.5"
             >
               {isBusy(deletion, "cancel") ? "Cancelling..." : "Cancel"}
             </button>

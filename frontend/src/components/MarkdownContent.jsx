@@ -1,12 +1,16 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { normalizeMath } from "../utils/math";
 
 function MarkdownContent({ children }) {
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         code(props) {
           const { children, className, ...rest } = props;
@@ -28,7 +32,7 @@ function MarkdownContent({ children }) {
         },
       }}
     >
-      {children}
+      {normalizeMath(children ?? "")}
     </Markdown>
   );
 }

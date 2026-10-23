@@ -9,7 +9,7 @@ function TopicCard({ topic }) {
     topic.tasks_total > 0 && topic.tasks_solved === topic.tasks_total;
 
   return (
-    <div className="border border-line rounded-md bg-surface shadow-sm">
+    <div className="border border-line rounded-md bg-surface transition-colors has-[>button:hover]:border-accent/40">
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}

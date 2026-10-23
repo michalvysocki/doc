@@ -6,7 +6,7 @@ function CourseFilesList({ courseFiles }) {
   const { files, error, remove } = courseFiles;
 
   return (
-    <div className="mx-3 mb-2 rounded-md border border-line bg-surface shadow-sm p-3 text-sm max-h-48 overflow-y-auto">
+    <div className="mx-3 mb-3 rounded-md border border-line bg-surface p-3 text-sm max-h-48 overflow-y-auto">
       <p className="font-medium text-ink">Course files</p>
       {files.length === 0 ? (
         <EmptyState
@@ -50,7 +50,7 @@ function CourseFilesList({ courseFiles }) {
                   type="button"
                   onClick={() => remove(file)}
                   aria-label={`Delete ${file.filename}`}
-                  className="p-1 rounded-md text-ink/50 hover:text-warn hover:bg-line/50"
+                  className="p-1 rounded-md text-ink/50 hover:text-warn hover:bg-hover"
                 >
                   <Trash2 size={14} />
                 </button>

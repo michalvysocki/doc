@@ -56,10 +56,13 @@ function MessageHistory({ messageHistory, isLoading, isReady, emptyState }) {
       )}
 
       {isLoading && (
-        <div className="flex gap-1 py-2">
-          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce" />
-          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:150ms]" />
-          <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:300ms]" />
+        <div className="flex items-center gap-2 py-2 text-sm text-ink/60">
+          <div className="flex gap-1">
+            <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce" />
+            <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:150ms]" />
+            <span className="w-2 h-2 rounded-full bg-ink/40 animate-bounce [animation-delay:300ms]" />
+          </div>
+          Thinking…
         </div>
       )}
     </div>

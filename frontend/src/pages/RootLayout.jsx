@@ -4,6 +4,7 @@ import useFileUpload from "../hooks/useFileUpload";
 import useCourses from "../hooks/useCourses";
 import useCreateCourse from "../hooks/useCreateCourse";
 import Sidebar from "../components/Sidebar";
+import { isWiderThan } from "../utils/screen";
 
 function RootLayout() {
   const courseMatch = useMatch("/courses/:courseId/*");
@@ -12,7 +13,7 @@ function RootLayout() {
   const fileUpload = useFileUpload(activeCourseId);
   const coursesState = useCourses();
   const creation = useCreateCourse();
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(() => isWiderThan(1024));
 
   const navigate = useNavigate();
 

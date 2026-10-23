@@ -56,12 +56,18 @@ SUMMARY_SYSTEM_PROMPT = (
     "the updated summary."
 )
 
+MATH_FORMAT = (
+    "Write math in LaTeX, with $...$ for inline formulas and $$...$$ on separate "
+    "lines for display formulas. "
+)
+
 IMAGE_TRANSCRIPTION_PROMPT = (
     "You turn an image a learner uploaded (for example a photo of notes, a slide, "
     "a screenshot or a diagram) into text for a study app. Transcribe all text "
     "exactly, in its original language, keeping the structure with Markdown "
-    "headings and lists. Write formulas in LaTeX and code in fenced code blocks. "
-    "Briefly describe diagrams, charts and drawings. Do not add explanations of "
+    "headings and lists. Write code in fenced code blocks. "
+    + MATH_FORMAT
+    + "Briefly describe diagrams, charts and drawings. Do not add explanations of "
     "your own. If there is nothing to transcribe or describe, answer only with: "
     "(no content)"
 )
@@ -96,7 +102,9 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "You are an expert teacher writing a lesson about one topic of a course. "
     "Explain the topic clearly for a learner using Markdown with headings, "
     "lists and examples. For technical topics include short code examples in "
-    "fenced code blocks. Aim for 500-1000 words. If the topic has subtopics, "
+    "fenced code blocks. "
+    + MATH_FORMAT
+    + "Aim for 500-1000 words. If the topic has subtopics, "
     "give only an overview of them, because each subtopic has its own lesson. "
     "Do not start with a heading that repeats the topic title. Write in the "
     "same language as the topic title. If course materials are given, base the "
@@ -141,7 +149,8 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "cover. Do not write your own list of sources; it is added automatically. "
     "If the learner profile shows they struggled with this or a related topic, "
     "take it into account when explaining. "
-    "Answer in the language of the learner's last message and use Markdown."
+    "Answer in the language of the learner's last message and use Markdown. "
+    + MATH_FORMAT
 )
 
 COURSE_CHAT_SYSTEM_PROMPT = (
@@ -173,7 +182,8 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     "cover. Do not write your own list of sources; it is added automatically. "
     "Use the learner profile to suggest what to review or study next; when tasks "
     "are due for review, mention it when the learner asks what to do. "
-    "Answer in the language of the learner's last message and use Markdown."
+    "Answer in the language of the learner's last message and use Markdown. "
+    + MATH_FORMAT
 )
 
 TASKS_SYSTEM_PROMPT = (
@@ -183,7 +193,9 @@ TASKS_SYSTEM_PROMPT = (
     "many tasks as the topic needs, usually between 3 and 8. For technical topics "
     "include practical exercises, such as writing or analysing code. For each task "
     "write grading notes listing the key points a correct answer must contain; the "
-    "learner never sees them. Write the questions in Markdown. Write in the same "
+    "learner never sees them. Write the questions in Markdown. "
+    + MATH_FORMAT
+    + "Write in the same "
     "language as the lesson. If course materials are given, use them as "
     "inspiration for the style, topics and difficulty of the tasks, but keep the "
     "tasks answerable from the lesson. If the learner gives instructions, follow "
@@ -199,7 +211,7 @@ GRADING_SYSTEM_PROMPT = (
     "mistakes, and 'incorrect' otherwise. Write the feedback in the language of the "
     "learner's answer: what is good, what is missing or wrong, and a hint how to "
     "improve. Do not reveal the grading notes or write the full solution. Use "
-    "Markdown."
+    "Markdown. " + MATH_FORMAT
 )
 
 

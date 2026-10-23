@@ -43,7 +43,7 @@ function RegenerationCards({ regenerations }) {
               type="button"
               onClick={() => confirm(proposal)}
               disabled={busy !== null}
-              className="rounded-md bg-accent px-3 py-1.5 text-paper hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-primary px-3 py-1.5"
             >
               {isBusy(proposal, "confirm") ? "Regenerating..." : "Regenerate"}
             </button>
@@ -51,7 +51,7 @@ function RegenerationCards({ regenerations }) {
               type="button"
               onClick={() => cancel(proposal)}
               disabled={busy !== null}
-              className="rounded-md border border-line px-3 py-1.5 text-ink hover:bg-line/50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-secondary px-3 py-1.5"
             >
               {isBusy(proposal, "cancel") ? "Cancelling..." : "Cancel"}
             </button>

@@ -102,7 +102,7 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="bg-accent hover:bg-accent/90 text-paper rounded-md px-4 py-2 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent"
+          className="btn-primary px-4 py-2"
         >
           Create course
         </button>
