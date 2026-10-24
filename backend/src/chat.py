@@ -31,6 +31,7 @@ from .schemas import (
     CourseOut,
     TaskOut,
     TopicDetail,
+    TopicOut,
 )
 from .tasks import get_tasks
 from .vectorstore import (
@@ -698,6 +699,25 @@ def send_topic_message(
     )
 
 
+def course_outline_for_chat(topics: list[TopicOut]) -> str:
+    """
+    The course outline for the course chat. A long course loses the topic
+    descriptions first, so the model always sees the whole structure; only an
+    outline that is too long even without them is cut.
+    """
+
+    outline = format_outline_with_progress(
+        topics, include_ids=True, include_descriptions=True
+    )
+    if len(outline) <= MAX_OUTLINE_CHARS_IN_CONTEXT:
+        return outline
+    return (
+        "(Topic descriptions are left out because the course is long; the list "
+        "of topics is complete.)\n"
+        + format_outline_with_progress(topics, include_ids=True)
+    )
+
+
 def send_course_message(
     course_id: uuid.UUID,
     content: str | None,
@@ -721,9 +741,7 @@ def send_course_message(
     if course is None:
         return None
 
-    outline = format_outline_with_progress(
-        course.topics, include_ids=True, include_descriptions=True
-    )
+    outline = course_outline_for_chat(course.topics)
 
     def build(
         history: list[ChatMessageOut], summary: str | None

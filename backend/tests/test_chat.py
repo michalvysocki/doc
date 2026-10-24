@@ -608,3 +608,27 @@ def test_learner_profile_section_in_both_chats():
 
     assert profile in topic[0]["content"]
     assert "LEARNER PROFILE" not in course[0]["content"]
+
+
+def test_course_chat_outline_keeps_descriptions_when_it_fits():
+    topics = [make_topic_out("Basics", [make_topic_out("Variables")])]
+
+    outline = chat.course_outline_for_chat(topics)
+
+    assert "Variables description" in outline
+    assert "descriptions are left out" not in outline
+
+
+def test_long_course_chat_outline_drops_descriptions_but_keeps_every_topic(
+    monkeypatch,
+):
+    monkeypatch.setattr(chat, "MAX_OUTLINE_CHARS_IN_CONTEXT", 300)
+    topics = [
+        make_topic_out(f"Module {n}", [make_topic_out(f"Topic {n}")]) for n in range(6)
+    ]
+
+    outline = chat.course_outline_for_chat(topics)
+
+    assert outline.startswith("(Topic descriptions are left out")
+    assert "description" not in outline.split("\n", 1)[1]
+    assert all(f"- Topic {n} (id: " in outline for n in range(6))

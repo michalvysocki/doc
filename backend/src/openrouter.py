@@ -1,7 +1,8 @@
 import base64
 import json
+import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,22 @@ import requests
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
-from .schemas import GeneratedTaskSet, RebuildPlan, TaskGrade, TopicMap
+from .schemas import (
+    GeneratedTaskSet,
+    LessonReview,
+    RebuildPlan,
+    RebuildPlanReview,
+    TaskGrade,
+    TaskSetReview,
+    TopicMap,
+    TopicMapReview,
+)
+from .validation import check_lesson, check_rebuild_plan, check_tasks, check_topic_map
+
+logger = logging.getLogger(__name__)
+
+# Receives short progress messages, e.g. to show them while a course is created.
+StatusCallback = Callable[[str], None]
 
 current_dir = Path(__file__).resolve().parent
 load_dotenv(current_dir.parent / ".env")
@@ -22,6 +38,10 @@ MODEL = os.getenv("MODEL")
 PLANNING_MODEL = os.getenv("PLANNING_MODEL") or MODEL
 # For example "high"; empty means the model's default reasoning.
 PLANNING_REASONING_EFFORT = os.getenv("PLANNING_REASONING_EFFORT") or None
+# Lessons and tasks are reviewed by a stronger model than the one that writes them.
+REVIEW_MODEL = os.getenv("REVIEW_MODEL") or MODEL
+# REVIEW=off in .env turns the reviews off (they cost an extra model call each).
+REVIEW_ENABLED = os.getenv("REVIEW", "on").lower() != "off"
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
 WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH", "on").lower() != "off"
@@ -228,6 +248,48 @@ GRADING_SYSTEM_PROMPT = (
     "learner's answer: what is good, what is missing or wrong, and a hint how to "
     "improve. Do not reveal the grading notes or write the full solution. Use "
     "Markdown. " + MATH_FORMAT
+)
+
+
+REVIEW_RULES = (
+    "You review content generated for a study app. Check the draft against the "
+    "criteria below and the issues found by automatic checks. List every real "
+    "problem in issues, briefly. If anything should change, return the complete "
+    "corrected version, keeping everything that is good unchanged; if nothing "
+    "needs to change, return an empty issues list and null. Do not rewrite only "
+    "for style. Keep the language of the draft. "
+)
+
+MAP_REVIEW_PROMPT = REVIEW_RULES + (
+    "Criteria for a course map: it covers the learner's goal (and the course "
+    "materials, if given) at the requested level, without going far beyond it; "
+    "topics are ordered so that each builds on earlier ones; no topics are "
+    "duplicated or overlap; every topic fits one study session; courses with more "
+    "than about 10 topics are grouped into modules; at most 3 levels; titles are "
+    "not numbered; each description says what the topic covers."
+)
+
+REBUILD_REVIEW_PROMPT = MAP_REVIEW_PROMPT + (
+    " The plan must also follow the learner's instructions, keep existing_topic_id "
+    "for every topic that keeps the same content, use each id at most once, and "
+    "not drop existing topics (especially ones with progress) unless the "
+    "instructions ask for it."
+)
+
+LESSON_REVIEW_PROMPT = REVIEW_RULES + (
+    "Criteria for a lesson: facts, definitions, formulas and code examples are "
+    "correct; it fits the learner's goal and level; it does not explain in detail "
+    "what other topics of the outline cover; Markdown with headings, no heading "
+    "that repeats the topic title; "
+    + MATH_FORMAT
+    + "code in fenced code blocks; no list of sources."
+)
+
+TASKS_REVIEW_PROMPT = REVIEW_RULES + (
+    "Criteria for practice tasks: every task can be answered from the lesson; "
+    "questions are clear open questions or exercises (no multiple choice); "
+    "ordered from easier to harder; grading notes are correct and list the key "
+    "points of a correct answer; no task repeats another."
 )
 
 
@@ -665,23 +727,178 @@ def _structured_query_with_sources[T: BaseModel](
 
 
 def _structured_query[T: BaseModel](
-    messages: list[dict[str, Any]], schema: type[T], name: str, timeout: int
+    messages: list[dict[str, Any]],
+    schema: type[T],
+    name: str,
+    timeout: int,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> T:
     """Like _structured_query_with_sources, without web search."""
 
-    return _structured_query_with_sources(messages, schema, name, timeout)[0]
+    return _structured_query_with_sources(
+        messages,
+        schema,
+        name,
+        timeout,
+        model=model,
+        reasoning_effort=reasoning_effort,
+    )[0]
+
+
+def _review[T: BaseModel](
+    system_prompt: str,
+    context: str,
+    draft: str,
+    issues: list[str],
+    schema: type[T],
+    name: str,
+    model: str,
+    reasoning_effort: str | None = None,
+) -> T:
+    """
+    Asks a model to check a draft against the criteria in the system prompt and
+    the issues found by automatic checks.
+
+    Raises:
+        OpenRouterError: if the request fails or the answer does not match the schema
+    """
+
+    found = "\n".join(f"- {issue}" for issue in issues) or "- none"
+    return _structured_query(
+        [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"{context}\n\nDRAFT:\n{draft}\n\n"
+                f"ISSUES FOUND BY AUTOMATIC CHECKS:\n{found}",
+            },
+        ],
+        schema,
+        name=name,
+        timeout=300,
+        model=model,
+        reasoning_effort=reasoning_effort,
+    )
+
+
+def _reviewed[T](
+    kind: str,
+    label: str,
+    draft: T,
+    check: Callable[[T], list[str]],
+    review: Callable[[list[str]], Any],
+    revised_of: Callable[[Any], T | None],
+    on_status: StatusCallback | None = None,
+) -> T:
+    """
+    Checks a draft, lets a model review it and returns the revised version.
+    Keeps the draft when nothing needs to change, when the review fails or when
+    the revision has more problems than the draft: a review must never block
+    generating a course, lesson or tasks.
+    """
+
+    if not REVIEW_ENABLED:
+        return draft
+
+    issues = check(draft)
+    if on_status:
+        on_status(f"Checking the {kind.lower()}…")
+    try:
+        result = review(issues)
+    except OpenRouterError as e:
+        logger.warning(
+            '%s review for "%s" failed, keeping the draft: %s', kind, label, e
+        )
+        return draft
+
+    revised = revised_of(result)
+    if revised is not None and len(check(revised)) > len(issues):
+        logger.warning(
+            '%s review for "%s" made it worse, keeping the draft', kind, label
+        )
+        revised = None
+
+    logger.info(
+        '%s review for "%s": %d issues, %s',
+        kind,
+        label,
+        len(result.issues),
+        "revised" if revised is not None else "kept",
+    )
+    for issue in result.issues:
+        logger.info("  - %s", issue)
+    return revised if revised is not None else draft
+
+
+def review_topic_map(
+    context: str, topic_map: TopicMap, issues: list[str]
+) -> TopicMapReview:
+    return _review(
+        MAP_REVIEW_PROMPT,
+        context,
+        topic_map.model_dump_json(indent=1),
+        issues,
+        TopicMapReview,
+        name="topic_map_review",
+        model=PLANNING_MODEL,
+        reasoning_effort=PLANNING_REASONING_EFFORT,
+    )
+
+
+def review_rebuild_plan(
+    context: str, plan: RebuildPlan, issues: list[str]
+) -> RebuildPlanReview:
+    return _review(
+        REBUILD_REVIEW_PROMPT,
+        context,
+        plan.model_dump_json(indent=1),
+        issues,
+        RebuildPlanReview,
+        name="rebuild_plan_review",
+        model=PLANNING_MODEL,
+        reasoning_effort=PLANNING_REASONING_EFFORT,
+    )
+
+
+def review_lesson(context: str, lesson: str, issues: list[str]) -> LessonReview:
+    return _review(
+        LESSON_REVIEW_PROMPT,
+        context,
+        lesson,
+        issues,
+        LessonReview,
+        name="lesson_review",
+        model=REVIEW_MODEL,
+    )
+
+
+def review_tasks(
+    context: str, task_set: GeneratedTaskSet, issues: list[str]
+) -> TaskSetReview:
+    return _review(
+        TASKS_REVIEW_PROMPT,
+        context,
+        task_set.model_dump_json(indent=1),
+        issues,
+        TaskSetReview,
+        name="tasks_review",
+        model=REVIEW_MODEL,
+    )
 
 
 def generate_topic_map(
-    initial_prompt: str, materials: str | None = None
+    initial_prompt: str,
+    materials: str | None = None,
+    on_status: StatusCallback | None = None,
 ) -> tuple[TopicMap, list[dict[str, Any]]]:
-    return _structured_query_with_sources(
+    if on_status:
+        on_status("Planning the course map…")
+    context = _with_extras(initial_prompt, None, materials)
+    topic_map, sources = _structured_query_with_sources(
         [
             {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": _with_extras(initial_prompt, None, materials),
-            },
+            {"role": "user", "content": context},
         ],
         TopicMap,
         name="topic_map",
@@ -690,6 +907,16 @@ def generate_topic_map(
         model=PLANNING_MODEL,
         reasoning_effort=PLANNING_REASONING_EFFORT,
     )
+    topic_map = _reviewed(
+        "Map",
+        topic_map.course_title,
+        topic_map,
+        check_topic_map,
+        lambda issues: review_topic_map(context, topic_map, issues),
+        lambda result: result.revised,
+        on_status=on_status,
+    )
+    return topic_map, sources
 
 
 def _with_extras(text: str, instructions: str | None, materials: str | None) -> str:
@@ -727,16 +954,12 @@ def generate_topic_explanation(
     if outline:
         context_lines.append(f"\nCOURSE OUTLINE:\n{outline}")
 
+    context = _with_extras("\n".join(context_lines), instructions, materials)
     payload: dict[str, Any] = {
         "model": MODEL,
         "messages": [
             {"role": "system", "content": TOPIC_EXPLANATION_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": _with_extras(
-                    "\n".join(context_lines), instructions, materials
-                ),
-            },
+            {"role": "user", "content": context},
         ],
     }
     tools = with_web_search([])
@@ -753,7 +976,15 @@ def generate_topic_explanation(
     if not content:
         raise OpenRouterError("Model returned an empty explanation")
 
-    return content, extract_web_sources(message.get("annotations"))
+    lesson = _reviewed(
+        "Lesson",
+        title,
+        content,
+        lambda text: check_lesson(text, title),
+        lambda issues: review_lesson(context, content, issues),
+        lambda result: result.revised_lesson,
+    )
+    return lesson, extract_web_sources(message.get("annotations"))
 
 
 def generate_tasks(
@@ -773,7 +1004,7 @@ def generate_tasks(
         instructions,
         materials,
     )
-    return _structured_query(
+    task_set = _structured_query(
         [
             {"role": "system", "content": TASKS_SYSTEM_PROMPT},
             {"role": "user", "content": context},
@@ -781,6 +1012,14 @@ def generate_tasks(
         GeneratedTaskSet,
         name="task_set",
         timeout=180,
+    )
+    return _reviewed(
+        "Tasks",
+        title,
+        task_set,
+        check_tasks,
+        lambda issues: review_tasks(context, task_set, issues),
+        lambda result: result.revised,
     )
 
 
@@ -790,6 +1029,7 @@ def generate_rebuild_plan(
     outline: str,
     instructions: str | None = None,
     materials: str | None = None,
+    existing_ids: set[str] | None = None,
 ) -> tuple[RebuildPlan, list[dict[str, Any]]]:
     context = _with_extras(
         f"Course: {course_title}\n"
@@ -798,7 +1038,7 @@ def generate_rebuild_plan(
         instructions,
         materials,
     )
-    return _structured_query_with_sources(
+    plan, sources = _structured_query_with_sources(
         [
             {"role": "system", "content": REBUILD_SYSTEM_PROMPT},
             {"role": "user", "content": context},
@@ -810,6 +1050,15 @@ def generate_rebuild_plan(
         model=PLANNING_MODEL,
         reasoning_effort=PLANNING_REASONING_EFFORT,
     )
+    plan = _reviewed(
+        "Rebuild",
+        course_title,
+        plan,
+        lambda draft: check_rebuild_plan(draft, existing_ids or set()),
+        lambda issues: review_rebuild_plan(context, plan, issues),
+        lambda result: result.revised,
+    )
+    return plan, sources
 
 
 def build_grading_messages(

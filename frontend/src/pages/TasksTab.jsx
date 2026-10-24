@@ -27,7 +27,7 @@ function TasksTab() {
     return (
       <p className="flex items-center gap-2 type-body text-muted">
         <LoaderCircle size={16} className="animate-spin text-accent" />
-        Creating tasks, this can take a few minutes...
+        Creating and checking tasks, this can take a few minutes...
       </p>
     );
   }

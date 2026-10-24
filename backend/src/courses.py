@@ -12,6 +12,7 @@ from .file_parsing import ParsedFile
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import (
     OpenRouterError,
+    StatusCallback,
     generate_topic_explanation,
     generate_topic_map,
 )
@@ -321,7 +322,9 @@ def _add_topic_map(
 
 
 def create_course_with_files(
-    initial_prompt: str, files: list[tuple[str, ParsedFile]]
+    initial_prompt: str,
+    files: list[tuple[str, ParsedFile]],
+    on_status: StatusCallback | None = None,
 ) -> uuid.UUID:
     """
     Creates a course from the prompt and the texts of uploaded files: the files
@@ -346,6 +349,8 @@ def create_course_with_files(
         )
 
     try:
+        if on_status:
+            on_status("Indexing your files…")
         for filename, parsed in files:
             add_document(
                 parsed.text,
@@ -358,7 +363,9 @@ def create_course_with_files(
         materials, file_sources = get_file_materials(
             course_id, initial_prompt, with_summaries=True
         )
-        topic_map, web_sources = generate_topic_map(initial_prompt, materials)
+        topic_map, web_sources = generate_topic_map(
+            initial_prompt, materials, on_status=on_status
+        )
 
         with SessionLocal() as session, session.begin():
             course = session.get(Course, course_id)

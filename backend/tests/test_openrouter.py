@@ -596,3 +596,63 @@ def test_lessons_keep_the_main_model(monkeypatch):
 
     assert sent["model"] == "main"
     assert "reasoning" not in sent
+
+
+def capture_review(monkeypatch, answer: dict) -> dict:
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": json.dumps(answer)}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    return sent
+
+
+def test_map_review_uses_the_planning_model_and_sends_the_checks(monkeypatch):
+    monkeypatch.setattr(openrouter, "PLANNING_MODEL", "planner")
+    sent = capture_review(monkeypatch, {"issues": [], "revised": None})
+    topic_map = TopicMap(course_title="Stats", topics=[])
+
+    review = openrouter.review_topic_map("Goal: stats", topic_map, [])
+
+    assert sent["model"] == "planner"
+    assert "Criteria for a course map" in sent["messages"][0]["content"]
+    user = sent["messages"][1]["content"]
+    assert user.startswith("Goal: stats\n\nDRAFT:\n")
+    assert user.endswith("ISSUES FOUND BY AUTOMATIC CHECKS:\n- none")
+    assert review.issues == []
+    assert review.revised is None
+
+
+def test_map_review_returns_the_revised_map(monkeypatch):
+    revised = {
+        "course_title": "Stats",
+        "topics": [{"title": "Basics", "description": "d", "children": []}],
+    }
+    capture_review(monkeypatch, {"issues": ["Missing basics"], "revised": revised})
+
+    review = openrouter.review_topic_map(
+        "Goal", TopicMap(course_title="Stats", topics=[]), ["The map has no topics."]
+    )
+
+    assert review.issues == ["Missing basics"]
+    assert review.revised.topics[0].title == "Basics"
+
+
+def test_lesson_review_uses_the_review_model(monkeypatch):
+    monkeypatch.setattr(openrouter, "REVIEW_MODEL", "reviewer")
+    sent = capture_review(monkeypatch, {"issues": [], "revised_lesson": None})
+
+    review = openrouter.review_lesson("Topic: Borrowing", "## Why\n\nText", ["x"])
+
+    assert sent["model"] == "reviewer"
+    assert sent["messages"][1]["content"].endswith("- x")
+    assert review.revised_lesson is None
+
+
+def test_invalid_review_answer_raises(monkeypatch):
+    capture_review(monkeypatch, {"unexpected": True})
+
+    with pytest.raises(openrouter.OpenRouterError, match="lesson_review"):
+        openrouter.review_lesson("Topic", "Text", [])

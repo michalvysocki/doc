@@ -13,6 +13,7 @@ function NewCoursePage() {
       <CoursePrompt
         onSubmit={handleCreateCourse}
         isLoading={creation.isCreating}
+        status={creation.status}
         error={creation.error}
       />
     </div>

@@ -9,7 +9,7 @@ import {
   MAX_UPLOAD_BYTES,
 } from "../utils/uploadLimits";
 
-function CoursePrompt({ onSubmit, isLoading, error }) {
+function CoursePrompt({ onSubmit, isLoading, status, error }) {
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useState([]);
   const [fileError, setFileError] = useState(null);
@@ -93,10 +93,7 @@ function CoursePrompt({ onSubmit, isLoading, error }) {
             />
           )}
           <span className="type-caption text-faint">
-            {isLoading &&
-              (files.length > 0
-                ? "Reading your files and creating the topic map, this can take a few minutes..."
-                : "Creating the topic map, this can take a few minutes...")}
+            {isLoading && (status ?? "Creating the course…")}
           </span>
         </div>
         <button type="submit" disabled={!canSubmit} className="btn-primary">

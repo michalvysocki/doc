@@ -12,3 +12,10 @@ def block_real_openrouter_calls(monkeypatch):
 
     monkeypatch.setattr(openrouter, "_post_to_openrouter", blocked)
     monkeypatch.setattr(openrouter, "_stream_from_openrouter", blocked)
+
+
+@pytest.fixture(autouse=True)
+def reviews_off(monkeypatch):
+    """Generation tests see one model call; review tests turn reviews on themselves."""
+
+    monkeypatch.setattr(openrouter, "REVIEW_ENABLED", False)

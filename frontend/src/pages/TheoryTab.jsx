@@ -20,7 +20,7 @@ function TheoryTab() {
       ) : (
         <p className="flex items-center gap-2 type-body text-muted">
           <LoaderCircle size={16} className="animate-spin text-accent" />
-          Writing the lesson, this can take a few minutes...
+          Writing and checking the lesson, this can take a few minutes...
         </p>
       )}
 

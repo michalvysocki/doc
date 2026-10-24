@@ -103,6 +103,13 @@ def propose_course_rebuild(
         if use_files
         else (None, [])
     )
+    with SessionLocal() as session:
+        valid_ids = {
+            str(topic_id)
+            for topic_id in session.scalars(
+                select(Topic.id).where(Topic.course_id == course_id)
+            )
+        }
     plan, web_sources = generate_rebuild_plan(
         course_title=course.title,
         initial_prompt=course.initial_prompt,
@@ -111,15 +118,8 @@ def propose_course_rebuild(
         ),
         instructions=instructions,
         materials=materials,
+        existing_ids=valid_ids,
     )
-
-    with SessionLocal() as session:
-        valid_ids = {
-            str(topic_id)
-            for topic_id in session.scalars(
-                select(Topic.id).where(Topic.course_id == course_id)
-            )
-        }
     topics = sanitize_plan(plan.topics, valid_ids)
     if not topics:
         raise RebuildError("the plan has no topics")

@@ -1,8 +1,10 @@
 import json
 import logging
+import queue
+import threading
 import uuid
-from collections.abc import Iterator
-from typing import Annotated
+from collections.abc import Callable, Iterator
+from typing import Annotated, Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -44,7 +46,7 @@ from .file_parsing import (
     prepare_upload,
     read_upload,
 )
-from .openrouter import OpenRouterError, generate_topic_map
+from .openrouter import OpenRouterError, StatusCallback, generate_topic_map
 from .regenerations import (
     cancel_regeneration,
     confirm_regeneration,
@@ -87,6 +89,8 @@ from .vectorstore import (
     list_course_files,
 )
 
+# Shows the app's own INFO logs (such as review results) next to uvicorn's.
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -159,7 +163,7 @@ def read_courses():
 MAX_FILES_PER_COURSE = 10
 
 
-@app.post("/courses", status_code=201, response_model=CourseOut)
+@app.post("/courses", status_code=201)
 def create_course(
     initial_prompt: Annotated[str, Form()],
     files: Annotated[list[UploadFile] | None, File()] = None,
@@ -174,28 +178,36 @@ def create_course(
             status_code=400, detail=f"At most {MAX_FILES_PER_COURSE} files per course"
         )
 
-    texts = []
+    # The files are read now: they are closed once the response starts streaming.
+    uploads = []
     for file in files:
         try:
-            parsed = prepare_upload(file.filename, file.content_type, read_upload(file))
+            uploads.append((file.filename, file.content_type, read_upload(file)))
         except FileParsingError as e:
             raise HTTPException(status_code=400, detail=f"{file.filename}: {e}") from e
-        except OpenRouterError as e:
-            raise HTTPException(status_code=502, detail=f"{file.filename}: {e}") from e
-        texts.append((file.filename, parsed))
 
-    try:
+    def work(on_status: StatusCallback) -> CourseOut:
+        texts = []
+        for number, (filename, content_type, data) in enumerate(uploads, start=1):
+            on_status(f"Reading {filename} ({number}/{len(uploads)})…")
+            try:
+                parsed = prepare_upload(filename, content_type, data)
+            except (FileParsingError, OpenRouterError) as e:
+                raise type(e)(f"{filename}: {e}") from e
+            texts.append((filename, parsed))
+
         if texts:
-            course_id = create_course_with_files(request.initial_prompt, texts)
+            course_id = create_course_with_files(
+                request.initial_prompt, texts, on_status
+            )
         else:
-            topic_map, sources = generate_topic_map(request.initial_prompt)
+            topic_map, sources = generate_topic_map(
+                request.initial_prompt, on_status=on_status
+            )
             course_id = save_course(request.initial_prompt, topic_map, sources)
-    except DocumentTooLargeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+        return get_course(course_id)
 
-    return get_course(course_id)
+    return _stream_events(_run_with_status(work), status_code=201)
 
 
 @app.get("/courses/{course_id}/reviews", response_model=list[ReviewTaskOut])
@@ -267,12 +279,13 @@ def _event_line(event: ChatEvent) -> str:
     return json.dumps(jsonable_encoder(event)) + "\n"
 
 
-def _stream_chat(
+def _stream_events(
     events: Iterator[ChatEvent], status_code: int = 200
 ) -> StreamingResponse:
     """
-    Sends chat events as JSON lines (NDJSON). The status is already sent when
-    the stream starts, so a failure on the way becomes a last "error" event.
+    Sends events (of a chat answer or a course being created) as JSON lines
+    (NDJSON). The status is already sent when the stream starts, so a failure on
+    the way becomes a last "error" event.
     """
 
     def lines() -> Iterator[str]:
@@ -296,13 +309,46 @@ def _stream_chat(
     )
 
 
+def _run_with_status(work: Callable[[StatusCallback], Any]) -> Iterator[ChatEvent]:
+    """
+    Runs slow work in a thread and yields its status messages as events while
+    it runs, then "done" with its result or "error".
+    """
+
+    events: queue.Queue[ChatEvent] = queue.Queue()
+
+    def status(text: str) -> None:
+        events.put({"type": "status", "text": text})
+
+    def run() -> None:
+        try:
+            events.put({"type": "done", "course": work(status)})
+        except (FileParsingError, DocumentTooLargeError, OpenRouterError) as e:
+            events.put({"type": "error", "detail": str(e)})
+        except Exception:
+            logger.exception("Creating a course failed")
+            events.put(
+                {
+                    "type": "error",
+                    "detail": "Something went wrong while creating the course",
+                }
+            )
+
+    threading.Thread(target=run, daemon=True).start()
+    while True:
+        event = events.get()
+        yield event
+        if event["type"] in ("done", "error"):
+            return
+
+
 @app.post("/topics/{topic_id}/messages", status_code=201)
 def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
     events = send_topic_message(topic_id, request.content, request.file_uuids)
     if events is None:
         raise HTTPException(status_code=404, detail="Topic not found")
 
-    return _stream_chat(events, status_code=201)
+    return _stream_events(events, status_code=201)
 
 
 @app.post("/topics/{topic_id}/messages/retry")
@@ -317,7 +363,7 @@ def post_topic_retry(topic_id: uuid.UUID):
     if events is None:
         raise HTTPException(status_code=404, detail="Topic not found")
 
-    return _stream_chat(events)
+    return _stream_events(events)
 
 
 @app.get("/topics/{topic_id}/tasks", response_model=list[TaskOut])
@@ -385,7 +431,7 @@ def post_course_message(course_id: uuid.UUID, request: MessageCreate):
     if events is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    return _stream_chat(events, status_code=201)
+    return _stream_events(events, status_code=201)
 
 
 @app.post("/courses/{course_id}/messages/retry")
@@ -400,7 +446,7 @@ def post_course_retry(course_id: uuid.UUID):
     if events is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    return _stream_chat(events)
+    return _stream_events(events)
 
 
 @app.get("/courses/{course_id}/topic-deletions", response_model=list[TopicDeletionOut])

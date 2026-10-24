@@ -291,6 +291,45 @@ class GeneratedTaskSet(BaseModel):
     tasks: list[GeneratedTask] = Field(description="Tasks from easier to harder")
 
 
+class TopicMapReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issues: list[str] = Field(description="Problems found, briefly; empty if none")
+    revised: TopicMap | None = Field(
+        description="The complete corrected map, or null if nothing needs to change"
+    )
+
+
+class RebuildPlanReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issues: list[str] = Field(description="Problems found, briefly; empty if none")
+    revised: RebuildPlan | None = Field(
+        description="The complete corrected plan, or null if nothing needs to change"
+    )
+
+
+class LessonReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issues: list[str] = Field(description="Problems found, briefly; empty if none")
+    revised_lesson: str | None = Field(
+        description=(
+            "The complete corrected lesson in Markdown, or null if nothing needs "
+            "to change"
+        )
+    )
+
+
+class TaskSetReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issues: list[str] = Field(description="Problems found, briefly; empty if none")
+    revised: GeneratedTaskSet | None = Field(
+        description="The complete corrected tasks, or null if nothing needs to change"
+    )
+
+
 MAX_TASKS_PER_TOOL_CALL = 5
 
 
