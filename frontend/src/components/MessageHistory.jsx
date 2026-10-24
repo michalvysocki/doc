@@ -2,9 +2,12 @@ import { useEffect, useRef } from "react";
 import AttachmentCard from "./AttachmentCard";
 import MarkdownContent from "./MarkdownContent";
 import EmptyState from "./EmptyState";
-import { MessagesSquare } from "lucide-react";
+import { Info, MessagesSquare } from "lucide-react";
 import getFileLabel, { getFileLabelFromName } from "../utils/fileLabel";
 import { fileContentUrl } from "../utils/api";
+
+// Notes the backend adds after a confirmation card, e.g. "[Deleted topic: X]".
+const NOTE = /^\[([^\]\n]+)\]$/;
 
 function MessageHistory({
   messageHistory,
@@ -34,8 +37,20 @@ function MessageHistory({
             <EmptyState icon={MessagesSquare} {...emptyState} />
           </div>
         )}
-      {messageHistory.map((message, index) =>
-        message.role === "user" ? (
+      {messageHistory.map((message, index) => {
+        const note = message.role === "user" && NOTE.exec(message.text);
+        if (note) {
+          return (
+            <p
+              key={index}
+              className="self-center flex items-center gap-1.5 type-caption text-faint"
+            >
+              <Info size={12} />
+              {note[1]}
+            </p>
+          );
+        }
+        return message.role === "user" ? (
           <div
             key={index}
             className="self-end max-w-[75%] rounded-md px-4 py-2 bg-card type-body text-ink"
@@ -67,8 +82,8 @@ function MessageHistory({
           >
             <MarkdownContent>{message.text}</MarkdownContent>
           </div>
-        ),
-      )}
+        );
+      })}
 
       {isLoading && (
         <div className="flex items-center gap-2 py-2 type-body text-muted">
