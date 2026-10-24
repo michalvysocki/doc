@@ -20,7 +20,14 @@ from .schemas import (
     TopicMap,
     TopicMapReview,
 )
-from .validation import check_lesson, check_rebuild_plan, check_tasks, check_topic_map
+from .validation import (
+    check_lesson,
+    check_rebuild_plan,
+    check_tasks,
+    check_topic_map,
+    strip_links,
+    strip_links_from_tree,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +114,8 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "(top-level topics with subtopics). Split a subtopic into its own subtopics "
     "only when it is too big for one study session, so the depth follows the "
     "content, up to 3 levels. "
+    "Do not put links or citations in titles and descriptions; sources are "
+    "collected separately. "
     "Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
     "request. If course materials are given, base the map on them where they are "
@@ -123,6 +132,8 @@ REBUILD_SYSTEM_PROMPT = (
     "(top-level topics with subtopics). Split a subtopic into its own subtopics "
     "only when it is too big for one study session, so the depth follows the "
     "content, up to 3 levels. "
+    "Do not put links or citations in titles and descriptions; sources are "
+    "collected separately. "
     "For "
     "every topic that covers the same content as an existing topic, set "
     "existing_topic_id to that topic's id from the current outline, so its lesson, "
@@ -920,6 +931,10 @@ def generate_topic_map(
         lambda result: result.revised,
         on_status=on_status,
     )
+    # Web search sometimes puts citations into the JSON fields; the cited pages
+    # are already kept as sources.
+    strip_links_from_tree(topic_map.topics)
+    topic_map.course_title = strip_links(topic_map.course_title)
     return topic_map, sources
 
 
@@ -1062,6 +1077,7 @@ def generate_rebuild_plan(
         lambda issues: review_rebuild_plan(context, plan, issues),
         lambda result: result.revised,
     )
+    strip_links_from_tree(plan.topics)
     return plan, sources
 
 

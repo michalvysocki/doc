@@ -6,6 +6,10 @@ import uuid
 from .schemas import GeneratedTaskSet, RebuildPlan, TopicMap
 
 MAX_DEPTH = 3
+# " ([doc.rust-lang.org](https://...))": a citation added by web search
+CITATION = re.compile(r"\s*\(\[[^\]]*\]\([^)]*\)\)")
+# "[text](https://...)": a Markdown link; titles and descriptions are plain text
+LINK = re.compile(r"\[([^\]]+)\]\(https?://[^)]*\)")
 # "1. Basics", "2) Loops", "Module 3: ...", "Lesson 4 - ..."
 NUMBERED_TITLE = re.compile(
     r"^\s*(\d+[.)]|(module|lesson|part|chapter)\s+\d+\b)", re.IGNORECASE
@@ -109,3 +113,18 @@ def check_tasks(task_set: GeneratedTaskSet) -> list[str]:
             issues.append(f"Task {number} repeats an earlier question.")
         seen.add(key)
     return issues
+
+
+def strip_links(text: str) -> str:
+    """Removes web search citations and Markdown links from plain text."""
+
+    return LINK.sub(r"\1", CITATION.sub("", text)).strip()
+
+
+def strip_links_from_tree(nodes) -> None:
+    """Cleans titles and descriptions of a topic tree in place."""
+
+    for node in nodes:
+        node.title = strip_links(node.title)
+        node.description = strip_links(node.description)
+        strip_links_from_tree(node.children)

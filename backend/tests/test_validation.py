@@ -11,6 +11,8 @@ from src.validation import (
     check_rebuild_plan,
     check_tasks,
     check_topic_map,
+    strip_links,
+    strip_links_from_tree,
 )
 
 
@@ -112,3 +114,38 @@ def test_task_problems_are_reported():
         "Task 2 repeats an earlier question.",
         "Task 3 has no grading notes.",
     ]
+
+
+def test_strip_links_removes_citations_and_keeps_link_text():
+    text = (
+        "Read the book chapter. ([doc.rust-lang.org]"
+        "(https://doc.rust-lang.org/book/ch04.html?utm_source=openai)) "
+        "See [The Cargo Book](https://doc.rust-lang.org/cargo/) too."
+    )
+
+    assert strip_links(text) == "Read the book chapter. See The Cargo Book too."
+
+
+def test_strip_links_leaves_plain_text_and_code_brackets():
+    text = "Use &[f32] and Vec<T> (without allocation)."
+
+    assert strip_links(text) == text
+
+
+def test_strip_links_from_tree_cleans_every_level():
+    topic_map = TopicMap(
+        course_title="Rust",
+        topics=[
+            node(
+                "Basics",
+                node(
+                    "Ownership",
+                    description="Moves. ([a.dev](https://a.dev/x?utm_source=openai))",
+                ),
+            )
+        ],
+    )
+
+    strip_links_from_tree(topic_map.topics)
+
+    assert topic_map.topics[0].children[0].description == "Moves."
