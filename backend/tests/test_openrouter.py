@@ -549,3 +549,50 @@ def test_summarize_document_sends_name_and_text(monkeypatch):
 
     assert summary == "Notes. Topics: a, b"
     assert sent["messages"][1]["content"] == "FILE: notes.txt\n\nHello"
+
+
+def capture_planning_request(monkeypatch, content: str) -> dict:
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", False)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    return sent
+
+
+def test_topic_map_uses_the_planning_model_and_reasoning(monkeypatch):
+    monkeypatch.setattr(openrouter, "PLANNING_MODEL", "planner")
+    monkeypatch.setattr(openrouter, "PLANNING_REASONING_EFFORT", "high")
+    sent = capture_planning_request(
+        monkeypatch, json.dumps({"course_title": "Stats", "topics": []})
+    )
+
+    openrouter.generate_topic_map("Statistics")
+
+    assert sent["model"] == "planner"
+    assert sent["reasoning"] == {"effort": "high"}
+
+
+def test_rebuild_plan_uses_the_planning_model(monkeypatch):
+    monkeypatch.setattr(openrouter, "PLANNING_MODEL", "planner")
+    monkeypatch.setattr(openrouter, "PLANNING_REASONING_EFFORT", None)
+    sent = capture_planning_request(monkeypatch, json.dumps({"topics": []}))
+
+    openrouter.generate_rebuild_plan("Stats", "Statistics", "- Basics")
+
+    assert sent["model"] == "planner"
+    assert "reasoning" not in sent
+
+
+def test_lessons_keep_the_main_model(monkeypatch):
+    monkeypatch.setattr(openrouter, "MODEL", "main")
+    monkeypatch.setattr(openrouter, "PLANNING_MODEL", "planner")
+    sent = capture_planning_request(monkeypatch, "Lesson")
+
+    openrouter.generate_topic_explanation("Rust", [], "Borrowing", "d", [])
+
+    assert sent["model"] == "main"
+    assert "reasoning" not in sent

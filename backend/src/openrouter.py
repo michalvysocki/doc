@@ -17,6 +17,11 @@ load_dotenv(current_dir.parent / ".env")
 URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL")
+# The course map and rebuild are planned once per course, so they may use a
+# stronger (more expensive) model than lessons, tasks and chats.
+PLANNING_MODEL = os.getenv("PLANNING_MODEL") or MODEL
+# For example "high"; empty means the model's default reasoning.
+PLANNING_REASONING_EFFORT = os.getenv("PLANNING_REASONING_EFFORT") or None
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 EMBEDDING_URL = "https://openrouter.ai/api/v1/embeddings"
 WEB_SEARCH_ENABLED = os.getenv("WEB_SEARCH", "on").lower() != "off"
@@ -77,7 +82,12 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "You are an expert teacher designing a course. Based on the user's request, "
     "create a map of topics the learner should study, ordered from the basics "
     "to advanced topics. Use at most 3 levels of nesting. Each topic should be "
-    "specific enough to study in a single session. Do not number the topic "
+    "specific enough to study in a single session. "
+    "When the course has more than about 10 topics, group them into modules "
+    "(top-level topics with subtopics). Split a subtopic into its own subtopics "
+    "only when it is too big for one study session, so the depth follows the "
+    "content, up to 3 levels. "
+    "Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
     "request. If course materials are given, base the map on them where they are "
     "relevant and cover what they contain. You can search the web when the course "
@@ -88,7 +98,12 @@ TOPIC_MAP_SYSTEM_PROMPT = (
 REBUILD_SYSTEM_PROMPT = (
     "You are an expert teacher redesigning an existing course. Create the complete "
     "new map of topics, ordered from the basics to advanced topics, at most 3 "
-    "levels deep, each topic specific enough to study in a single session. For "
+    "levels deep, each topic specific enough to study in a single session. "
+    "When the course has more than about 10 topics, group them into modules "
+    "(top-level topics with subtopics). Split a subtopic into its own subtopics "
+    "only when it is too big for one study session, so the depth follows the "
+    "content, up to 3 levels. "
+    "For "
     "every topic that covers the same content as an existing topic, set "
     "existing_topic_id to that topic's id from the current outline, so its lesson, "
     "tasks and progress are kept; you may change its title, description and place. "
@@ -606,6 +621,8 @@ def _structured_query_with_sources[T: BaseModel](
     name: str,
     timeout: int,
     web_search: bool = False,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[T, list[dict[str, Any]]]:
     """
     Asks the model for a JSON response matching the schema (strict structured
@@ -620,7 +637,7 @@ def _structured_query_with_sources[T: BaseModel](
     """
 
     payload: dict[str, Any] = {
-        "model": MODEL,
+        "model": model or MODEL,
         "messages": messages,
         "response_format": {
             "type": "json_schema",
@@ -631,6 +648,8 @@ def _structured_query_with_sources[T: BaseModel](
             },
         },
     }
+    if reasoning_effort:
+        payload["reasoning"] = {"effort": reasoning_effort}
     tools = with_web_search([]) if web_search else []
     if tools:
         payload["tools"] = tools
@@ -668,6 +687,8 @@ def generate_topic_map(
         name="topic_map",
         timeout=240,
         web_search=True,
+        model=PLANNING_MODEL,
+        reasoning_effort=PLANNING_REASONING_EFFORT,
     )
 
 
@@ -786,6 +807,8 @@ def generate_rebuild_plan(
         name="rebuild_plan",
         timeout=300,
         web_search=True,
+        model=PLANNING_MODEL,
+        reasoning_effort=PLANNING_REASONING_EFFORT,
     )
 
 
