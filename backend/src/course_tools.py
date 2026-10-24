@@ -2,7 +2,12 @@ import uuid
 
 from pydantic import ValidationError
 
-from .course_rebuilds import RebuildError, get_course_rebuild, propose_course_rebuild
+from .course_rebuilds import (
+    RebuildError,
+    get_course_rebuild,
+    propose_added_topics,
+    propose_course_rebuild,
+)
 from .courses import FIRST, TopicPlacementError, add_topics, move_topic, rename_topic
 from .openrouter import OpenRouterError
 from .regenerations import propose_regeneration
@@ -25,8 +30,9 @@ ADD_TOPICS_TOOL = {
     "function": {
         "name": "add_topics",
         "description": (
-            "Add new topics, optionally with subtopics, to the course map. Use topic "
-            "ids from the course outline."
+            "Propose adding a few new topics, optionally with subtopics, to the "
+            "course map. Adds nothing: the learner sees a preview and applies or "
+            "discards it. Use topic ids from the course outline."
         ),
         "parameters": AddTopicsArgs.model_json_schema(),
     },
@@ -179,13 +185,21 @@ def run_course_tool(
     try:
         if name == "add_topics":
             args = AddTopicsArgs.model_validate_json(arguments)
-            titles = add_topics(
+            proposal = propose_added_topics(
                 course_id,
                 _parse_id(args.parent_topic_id),
                 _parse_id(args.after_topic_id),
                 args.topics,
             )
-            return f"Added {len(titles)} topics: {', '.join(titles)}", True
+            if proposal is None:
+                return "Error: course not found", False
+            titles, where = proposal
+            return (
+                f"Proposed adding {len(titles)} topics ({', '.join(titles)}) "
+                f"{where}. Nothing is added yet: the learner applies or discards "
+                "the preview shown above the course map. This replaces any earlier "
+                "rebuild proposal."
+            ), True
         if name == "rename_topic":
             args = RenameTopicArgs.model_validate_json(arguments)
             old_title = rename_topic(
@@ -235,7 +249,7 @@ def run_course_tool(
             return _rebuild_summary(rebuild), True
     except ValidationError as e:
         return f"Error: invalid arguments: {e}", False
-    except (ValueError, TopicPlacementError) as e:
+    except (ValueError, TopicPlacementError, RebuildError) as e:
         return f"Error: {e}", False
 
     return f"Error: unknown tool {name}", False

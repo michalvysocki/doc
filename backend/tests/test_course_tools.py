@@ -188,7 +188,7 @@ def test_run_course_tool_reports_placement_error(monkeypatch):
     def fail(*args):
         raise TopicPlacementError("parent topic not found in this course")
 
-    monkeypatch.setattr(course_tools, "add_topics", fail)
+    monkeypatch.setattr(course_tools, "propose_added_topics", fail)
     arguments = json.dumps(
         {"parent_topic_id": str(uuid.uuid4()), "after_topic_id": None, "topics": []}
     )
@@ -201,14 +201,14 @@ def test_run_course_tool_reports_placement_error(monkeypatch):
     assert changed is False
 
 
-def test_run_course_tool_adds_topics(monkeypatch):
+def test_run_course_tool_proposes_added_topics(monkeypatch):
     received = {}
 
-    def fake_add(course_id, parent_id, after_id, nodes):
+    def fake_propose(course_id, parent_id, after_id, nodes):
         received.update(parent=parent_id, after=after_id, count=len(nodes))
-        return ["Async Rust", "Futures"]
+        return ["Async Rust", "Futures"], 'under "Concurrency", after "Threads"'
 
-    monkeypatch.setattr(course_tools, "add_topics", fake_add)
+    monkeypatch.setattr(course_tools, "propose_added_topics", fake_propose)
     parent = uuid.uuid4()
     arguments = json.dumps(
         {
@@ -230,7 +230,11 @@ def test_run_course_tool_adds_topics(monkeypatch):
         uuid.uuid4(), "add_topics", arguments
     )
 
-    assert (result, changed) == ("Added 2 topics: Async Rust, Futures", True)
+    assert result.startswith(
+        'Proposed adding 2 topics (Async Rust, Futures) under "Concurrency", '
+        'after "Threads". Nothing is added yet'
+    )
+    assert changed is True
     assert received == {"parent": parent, "after": None, "count": 1}
 
 

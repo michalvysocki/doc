@@ -7,8 +7,10 @@ from src.course_rebuilds import (
     _count_nodes,
     _kept_ids,
     _preview,
+    insert_topics,
     sanitize_plan,
 )
+from src.courses import TopicPlacementError
 from src.schemas import RebuildTopicNode, TopicOut
 
 
@@ -110,3 +112,74 @@ def test_preview_has_no_old_title_when_title_is_unchanged():
     [kept] = _preview([node("Basics", str(basics.id))], {basics.id: basics})
 
     assert kept.old_title is None
+
+
+def plan_node(title, topic_id=None, *children):
+    return RebuildTopicNode(
+        existing_topic_id=topic_id,
+        title=title,
+        description="d",
+        children=list(children),
+    )
+
+
+def plan_titles(nodes):
+    return [(node.title, plan_titles(node.children)) for node in nodes]
+
+
+def test_insert_topics_at_the_end_of_the_top_level():
+    tree = [plan_node("Basics", "id-a"), plan_node("Async", "id-b")]
+
+    where = insert_topics(tree, None, None, [plan_node("Networking")])
+
+    assert where == 'at the top level, after "Async"'
+    assert [title for title, _ in plan_titles(tree)] == [
+        "Basics",
+        "Async",
+        "Networking",
+    ]
+
+
+def test_insert_topics_under_a_parent_after_a_sibling():
+    tree = [
+        plan_node(
+            "Concurrency",
+            "id-c",
+            plan_node("Threads", "id-t"),
+            plan_node("Channels", "id-ch"),
+        )
+    ]
+
+    where = insert_topics(tree, "id-c", "id-t", [plan_node("Atomics")])
+
+    assert where == 'under "Concurrency", after "Threads"'
+    assert plan_titles(tree)[0][1] == [
+        ("Threads", []),
+        ("Atomics", []),
+        ("Channels", []),
+    ]
+
+
+def test_insert_topics_as_the_first_child_of_an_empty_parent():
+    tree = [plan_node("Macros", "id-m")]
+
+    where = insert_topics(tree, "id-m", None, [plan_node("macro_rules!")])
+
+    assert where == 'under "Macros", as the first'
+
+
+@pytest.mark.parametrize(
+    ("parent", "after", "message"),
+    [
+        ("id-unknown", None, "parent topic not found"),
+        ("id-c", "id-other", "sibling topic not found"),
+    ],
+)
+def test_insert_topics_rejects_a_wrong_place(parent, after, message):
+    tree = [
+        plan_node("Concurrency", "id-c", plan_node("Threads", "id-t")),
+        plan_node("Other", "id-other"),
+    ]
+
+    with pytest.raises(TopicPlacementError, match=message):
+        insert_topics(tree, parent, after, [plan_node("New")])

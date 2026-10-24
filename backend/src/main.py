@@ -11,6 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 from .chat import (
     ChatEvent,
@@ -487,7 +488,14 @@ def read_course_rebuild(course_id: uuid.UUID):
 
 @app.post("/course-rebuilds/{rebuild_id}/apply", response_model=ChatMessageOut)
 def post_apply_course_rebuild(rebuild_id: uuid.UUID):
-    result = apply_course_rebuild(rebuild_id)
+    try:
+        result = apply_course_rebuild(rebuild_id)
+    except SQLAlchemyError as e:
+        logger.exception("Applying course rebuild %s failed", rebuild_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Could not apply the rebuild; the course was not changed",
+        ) from e
     if result is None:
         raise HTTPException(status_code=404, detail="Course rebuild not found")
 

@@ -4,7 +4,12 @@ from typing import Any, NamedTuple
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .courses import get_course, get_file_materials, merge_sources
+from .courses import (
+    TopicPlacementError,
+    get_course,
+    get_file_materials,
+    merge_sources,
+)
 from .database import SessionLocal
 from .models import Course, CourseRebuild, Document, Task, TaskAttempt, Topic
 from .openrouter import generate_rebuild_plan
@@ -15,6 +20,7 @@ from .schemas import (
     RebuildPlan,
     RebuildPreviewNode,
     RebuildTopicNode,
+    TopicNode,
     TopicOut,
 )
 
@@ -124,20 +130,146 @@ def propose_course_rebuild(
     if not topics:
         raise RebuildError("the plan has no topics")
 
+    return _save_rebuild(course_id, topics, merge_sources(web_sources, file_sources))
+
+
+def _save_rebuild(
+    course_id: uuid.UUID,
+    topics: list[RebuildTopicNode],
+    sources: list[dict[str, Any]],
+) -> uuid.UUID:
+    """Saves a plan as the course's pending rebuild, replacing an older one."""
+
     with SessionLocal() as session, session.begin():
         session.execute(
             delete(CourseRebuild).where(CourseRebuild.course_id == course_id)
         )
         rebuild = CourseRebuild(
             course_id=course_id,
-            plan={
-                **RebuildPlan(topics=topics).model_dump(),
-                "sources": merge_sources(web_sources, file_sources),
-            },
+            plan={**RebuildPlan(topics=topics).model_dump(), "sources": sources},
         )
         session.add(rebuild)
         session.flush()
         return rebuild.id
+
+
+def _plan_from_course(topics: list[TopicOut]) -> list[RebuildTopicNode]:
+    """The current topic tree as a plan that keeps every topic."""
+
+    return [
+        RebuildTopicNode(
+            existing_topic_id=str(topic.id),
+            title=topic.title,
+            description=topic.description,
+            children=_plan_from_course(topic.children),
+        )
+        for topic in topics
+    ]
+
+
+def _plan_from_new(nodes: list[TopicNode]) -> list[RebuildTopicNode]:
+    return [
+        RebuildTopicNode(
+            existing_topic_id=None,
+            title=node.title,
+            description=node.description,
+            children=_plan_from_new(node.children),
+        )
+        for node in nodes
+    ]
+
+
+def _find_node(nodes: list[RebuildTopicNode], topic_id: str) -> RebuildTopicNode | None:
+    for node in nodes:
+        if node.existing_topic_id == topic_id:
+            return node
+        if found := _find_node(node.children, topic_id):
+            return found
+    return None
+
+
+def insert_topics(
+    tree: list[RebuildTopicNode],
+    parent_id: str | None,
+    after_topic_id: str | None,
+    new_nodes: list[RebuildTopicNode],
+) -> str:
+    """
+    Inserts new topics into a plan tree in place, under the parent and after the
+    sibling (None: at the end).
+
+    Returns:
+        str: where they went, e.g. 'under "Async", after "Tokio"'
+
+    Raises:
+        TopicPlacementError: if the parent or the sibling is not in the tree
+    """
+
+    if parent_id is None:
+        siblings, place = tree, "at the top level"
+    else:
+        parent = _find_node(tree, parent_id)
+        if parent is None:
+            raise TopicPlacementError("parent topic not found in this course")
+        siblings, place = parent.children, f'under "{parent.title}"'
+
+    if after_topic_id is None:
+        index = len(siblings)
+        after = f'after "{siblings[-1].title}"' if siblings else "as the first"
+    else:
+        ids = [node.existing_topic_id for node in siblings]
+        if after_topic_id not in ids:
+            raise TopicPlacementError("sibling topic not found under this parent")
+        index = ids.index(after_topic_id) + 1
+        after = f'after "{siblings[index - 1].title}"'
+
+    siblings[index:index] = new_nodes
+    return f"{place}, {after}"
+
+
+def _titles(nodes: list[RebuildTopicNode]) -> list[str]:
+    titles = []
+    for node in nodes:
+        titles.append(node.title)
+        titles.extend(_titles(node.children))
+    return titles
+
+
+def propose_added_topics(
+    course_id: uuid.UUID,
+    parent_id: uuid.UUID | None,
+    after_topic_id: uuid.UUID | None,
+    topics: list[TopicNode],
+) -> tuple[list[str], str] | None:
+    """
+    Saves adding topics as the course's pending rebuild: the current tree with
+    every topic kept, and the new topics in their place. Nothing changes until
+    the learner applies it.
+
+    Returns:
+        tuple[list[str], str] | None: titles of the new topics and where they go,
+            or None if the course does not exist
+
+    Raises:
+        TopicPlacementError: if the parent or the sibling is not valid
+        RebuildError: if the course would be deeper than 3 levels
+    """
+
+    course = get_course(course_id)
+    if course is None:
+        return None
+
+    tree = _plan_from_course(course.topics)
+    new_nodes = _plan_from_new(topics)
+    where = insert_topics(
+        tree,
+        str(parent_id) if parent_id else None,
+        str(after_topic_id) if after_topic_id else None,
+        new_nodes,
+    )
+    planned = sanitize_plan(tree, set(map(str, _flatten(course.topics))))
+    _save_rebuild(course_id, planned, sources=[])
+    return _titles(new_nodes), where
 
 
 def _flatten(topics: list[TopicOut]) -> dict[uuid.UUID, TopicOut]:
@@ -304,6 +436,9 @@ def _apply_nodes(
                 position=position,
             )
             session.add(topic)
+            # Kept topics may move under this new one, and the database checks
+            # parent_id at once, so the new row must exist before their update.
+            session.flush()
             added += 1
         added += _apply_nodes(session, course_id, node.children, topic.id, topics)
     return added
