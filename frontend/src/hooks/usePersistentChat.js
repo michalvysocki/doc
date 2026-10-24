@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson } from "../utils/api";
+import { fetchJson, streamJson } from "../utils/api";
 
 function toViewMessage(message) {
   return {
     role: message.role,
     text: message.content,
+    streaming: Boolean(message.streaming),
     documents: message.attachments.map((attachment) => ({
       file_uuid: attachment.file_uuid,
       filename: attachment.filename,
@@ -12,6 +13,24 @@ function toViewMessage(message) {
     })),
   };
 }
+
+// Adds a piece of a streamed answer to the temporary message at the end.
+function withDelta(messages, text) {
+  const last = messages.at(-1);
+  if (last?.streaming) {
+    return [
+      ...messages.slice(0, -1),
+      { ...last, content: last.content + text },
+    ];
+  }
+  return [
+    ...messages,
+    { role: "assistant", content: text, attachments: [], streaming: true },
+  ];
+}
+
+const withoutStreaming = (messages) =>
+  messages.filter((message) => !message.streaming);
 
 export default function usePersistentChat(
   path,
@@ -25,6 +44,7 @@ export default function usePersistentChat(
     error: null,
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState(null);
 
   useEffect(() => {
     if (!path) return;
@@ -55,6 +75,35 @@ export default function usePersistentChat(
     }));
   }
 
+  // Reads the chat events of one answer and resolves with the final reply.
+  async function readAnswer(forPath, url, options, onUserMessage) {
+    let reply = null;
+    await streamJson(url, options, (event) => {
+      if (event.type === "user_message") {
+        onUserMessage?.(event.message);
+      } else if (event.type === "status") {
+        setStatus(event.text);
+      } else if (event.type === "delta") {
+        setStatus(null);
+        updateChat(forPath, (prev) => ({
+          ...prev,
+          messages: withDelta(prev.messages, event.text),
+        }));
+      } else if (event.type === "reset") {
+        updateChat(forPath, (prev) => ({
+          ...prev,
+          messages: withoutStreaming(prev.messages),
+        }));
+      } else if (event.type === "done") {
+        reply = event.reply;
+      } else if (event.type === "error") {
+        throw new Error(event.detail);
+      }
+    });
+    if (!reply) throw new Error("The answer was cut off");
+    return reply;
+  }
+
   async function handleSend() {
     const sendingPath = path;
     const { documents } = fileUpload;
@@ -78,18 +127,32 @@ export default function usePersistentChat(
     setIsLoading(true);
 
     try {
-      const reply = await fetchJson(sendingPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: pending.content,
-          file_uuids: documents.map((document) => document.file_uuid),
-        }),
-      });
+      const reply = await readAnswer(
+        sendingPath,
+        sendingPath,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: pending.content,
+            file_uuids: documents.map((document) => document.file_uuid),
+          }),
+        },
+        (saved) =>
+          updateChat(sendingPath, (prev) => ({
+            ...prev,
+            messages: prev.messages.map((message) =>
+              message === pending ? saved : message,
+            ),
+          })),
+      );
       updateChat(sendingPath, (prev) => ({
         ...prev,
         messages: [
-          ...prev.messages.filter((message) => message !== pending),
+          ...withoutStreaming(prev.messages).filter(
+            (message) =>
+              message !== pending && message.id !== reply.user_message.id,
+          ),
           reply.user_message,
           reply.assistant_message,
         ],
@@ -107,11 +170,12 @@ export default function usePersistentChat(
       }
       updateChat(sendingPath, (prev) => ({
         ...prev,
-        messages: saved ?? prev.messages,
+        messages: saved ?? withoutStreaming(prev.messages),
         error: error.message,
       }));
     } finally {
       setIsLoading(false);
+      setStatus(null);
     }
   }
 
@@ -121,17 +185,24 @@ export default function usePersistentChat(
     setIsLoading(true);
 
     try {
-      const reply = await fetchJson(`${retryPath}/retry`, { method: "POST" });
+      const reply = await readAnswer(retryPath, `${retryPath}/retry`, {
+        method: "POST",
+      });
       updateChat(retryPath, (prev) => ({
         ...prev,
-        messages: [...prev.messages, reply.assistant_message],
+        messages: [...withoutStreaming(prev.messages), reply.assistant_message],
       }));
       if (reply.course_changed) onCourseChanged?.();
     } catch (error) {
       console.error("Error while retrying message: ", error);
-      updateChat(retryPath, (prev) => ({ ...prev, error: error.message }));
+      updateChat(retryPath, (prev) => ({
+        ...prev,
+        messages: withoutStreaming(prev.messages),
+        error: error.message,
+      }));
     } finally {
       setIsLoading(false);
+      setStatus(null);
     }
   }
 
@@ -154,6 +225,7 @@ export default function usePersistentChat(
     canRetry,
     appendMessage,
     isLoading,
+    status,
     error: isCurrent ? chat.error : null,
     isHistoryReady: isCurrent,
   };

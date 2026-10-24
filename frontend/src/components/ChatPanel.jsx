@@ -107,6 +107,7 @@ function ChatPanel({
           <MessageHistory
             messageHistory={chat.messageHistory}
             isLoading={chat.isLoading}
+            status={chat.status}
             isReady={chat.isHistoryReady}
             hasError={Boolean(chat.error)}
             emptyState={emptyState}

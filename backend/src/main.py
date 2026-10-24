@@ -1,11 +1,17 @@
+import json
+import logging
 import uuid
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from .chat import (
+    ChatEvent,
     NothingToRetryError,
     add_course_note,
     add_topic_note,
@@ -48,7 +54,6 @@ from .schemas import (
     AttemptCreate,
     AttemptOut,
     ChatMessageOut,
-    ChatReply,
     CourseCreate,
     CourseFileOut,
     CourseOut,
@@ -81,6 +86,8 @@ from .vectorstore import (
     get_image,
     list_course_files,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -254,34 +261,63 @@ def read_topic_messages(topic_id: uuid.UUID):
     return list_topic_messages(topic_id)
 
 
-@app.post("/topics/{topic_id}/messages", status_code=201, response_model=ChatReply)
-def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
-    try:
-        reply = send_topic_message(topic_id, request.content, request.file_uuids)
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
+def _event_line(event: ChatEvent) -> str:
+    # jsonable_encoder turns the Pydantic models (ChatReply, ChatMessageOut),
+    # dates and UUIDs inside an event into plain JSON values.
+    return json.dumps(jsonable_encoder(event)) + "\n"
 
-    if reply is None:
+
+def _stream_chat(
+    events: Iterator[ChatEvent], status_code: int = 200
+) -> StreamingResponse:
+    """
+    Sends chat events as JSON lines (NDJSON). The status is already sent when
+    the stream starts, so a failure on the way becomes a last "error" event.
+    """
+
+    def lines() -> Iterator[str]:
+        try:
+            for event in events:
+                yield _event_line(event)
+        except OpenRouterError as e:
+            yield _event_line({"type": "error", "detail": str(e)})
+        except Exception:
+            logger.exception("Chat stream failed")
+            yield _event_line(
+                {"type": "error", "detail": "Something went wrong while answering"}
+            )
+
+    return StreamingResponse(
+        lines(),
+        status_code=status_code,
+        media_type="application/x-ndjson",
+        # Stops proxies and browsers from buffering the stream.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/topics/{topic_id}/messages", status_code=201)
+def post_topic_message(topic_id: uuid.UUID, request: MessageCreate):
+    events = send_topic_message(topic_id, request.content, request.file_uuids)
+    if events is None:
         raise HTTPException(status_code=404, detail="Topic not found")
 
-    return reply
+    return _stream_chat(events, status_code=201)
 
 
-@app.post("/topics/{topic_id}/messages/retry", response_model=ChatReply)
+@app.post("/topics/{topic_id}/messages/retry")
 def post_topic_retry(topic_id: uuid.UUID):
     try:
-        reply = retry_topic_message(topic_id)
+        events = retry_topic_message(topic_id)
     except NothingToRetryError as e:
         raise HTTPException(
             status_code=409, detail="There is no unanswered message"
         ) from e
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
 
-    if reply is None:
+    if events is None:
         raise HTTPException(status_code=404, detail="Topic not found")
 
-    return reply
+    return _stream_chat(events)
 
 
 @app.get("/topics/{topic_id}/tasks", response_model=list[TaskOut])
@@ -343,34 +379,28 @@ def read_course_messages(course_id: uuid.UUID):
     return list_course_messages(course_id)
 
 
-@app.post("/courses/{course_id}/messages", status_code=201, response_model=ChatReply)
+@app.post("/courses/{course_id}/messages", status_code=201)
 def post_course_message(course_id: uuid.UUID, request: MessageCreate):
-    try:
-        reply = send_course_message(course_id, request.content, request.file_uuids)
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
-
-    if reply is None:
+    events = send_course_message(course_id, request.content, request.file_uuids)
+    if events is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    return reply
+    return _stream_chat(events, status_code=201)
 
 
-@app.post("/courses/{course_id}/messages/retry", response_model=ChatReply)
+@app.post("/courses/{course_id}/messages/retry")
 def post_course_retry(course_id: uuid.UUID):
     try:
-        reply = retry_course_message(course_id)
+        events = retry_course_message(course_id)
     except NothingToRetryError as e:
         raise HTTPException(
             status_code=409, detail="There is no unanswered message"
         ) from e
-    except OpenRouterError as e:
-        raise HTTPException(status_code=502, detail=str(e)) from e
 
-    if reply is None:
+    if events is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    return reply
+    return _stream_chat(events)
 
 
 @app.get("/courses/{course_id}/topic-deletions", response_model=list[TopicDeletionOut])

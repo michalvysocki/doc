@@ -269,11 +269,11 @@ def test_chat_request_offers_web_search_next_to_own_tools(monkeypatch):
 
     def capture(url, payload, timeout):
         sent.update(payload)
-        return {"choices": [{"message": {"content": "Hi"}}]}
+        return iter([{"choices": [{"delta": {"content": "Hi"}}]}])
 
     monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", True)
-    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
-    openrouter.send_query_with_tools([], [{"type": "function"}])
+    monkeypatch.setattr(openrouter, "_stream_from_openrouter", capture)
+    list(openrouter.stream_query_with_tools([], [{"type": "function"}]))
 
     assert sent["tools"] == [{"type": "function"}, openrouter.WEB_SEARCH_TOOL]
 

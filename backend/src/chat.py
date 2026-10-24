@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Generator, Iterator
 from typing import Any
 
 from sqlalchemy import and_, select, update
@@ -20,8 +20,7 @@ from .openrouter import (
     append_sources,
     image_part,
     rewrite_search_query,
-    send_query,
-    send_query_with_tools,
+    stream_query_with_tools,
     summarize_conversation,
 )
 from .outline import format_course_outline, format_outline_with_progress
@@ -55,6 +54,9 @@ MAX_LESSON_CHARS_IN_CONTEXT = 40_000
 MAX_OUTLINE_CHARS_IN_CONTEXT = 20_000
 MAX_TOOL_ROUNDS = 3
 MAX_CHARS_IN_TASK_CONTEXT = 1500
+
+# A chat event sent to the browser while a reply is streamed (see _exchange).
+ChatEvent = dict[str, Any]
 
 
 def _conversation_condition(course_id: uuid.UUID | None, topic_id: uuid.UUID | None):
@@ -460,11 +462,27 @@ def build_course_chat_messages(
 ToolRunner = Callable[[str, str], tuple[str, bool]]
 
 
+# Shown in the chat while the backend runs a tool the model asked for.
+TOOL_STATUS = {
+    "add_topics": "Adding topics…",
+    "rename_topic": "Renaming a topic…",
+    "move_topic": "Moving a topic…",
+    "propose_topic_deletion": "Preparing a deletion card…",
+    "propose_course_rebuild": "Planning a new course map…",
+    "add_subtopics": "Adding subtopics…",
+    "add_tasks": "Adding tasks…",
+    "propose_lesson_regeneration": "Preparing a regeneration card…",
+    "propose_tasks_regeneration": "Preparing a regeneration card…",
+}
+
+
 def _ask_with_tools(
     messages: list[dict[str, Any]], tools: list[dict[str, Any]], run_tool: ToolRunner
-) -> tuple[str, bool]:
+) -> Generator[ChatEvent, None, tuple[str, bool]]:
     """
-    Lets the model call tools until it answers with text.
+    Lets the model call tools until it answers with text, yielding chat events
+    on the way: "delta" for streamed text, "reset" when streamed text turned
+    out to come before a tool call, "status" while a tool runs.
 
     Returns:
         tuple[str, bool]: the final answer, and whether any tool changed the course
@@ -475,7 +493,14 @@ def _ask_with_tools(
 
     changed = False
     for _ in range(MAX_TOOL_ROUNDS):
-        message = send_query_with_tools(messages, tools)
+        streamed = False
+        for kind, value in stream_query_with_tools(messages, tools):
+            if kind == "delta":
+                streamed = True
+                yield {"type": "delta", "text": value}
+            else:
+                message = value
+
         tool_calls = message.get("tool_calls")
         if not tool_calls:
             if not message.get("content"):
@@ -484,11 +509,13 @@ def _ask_with_tools(
                 message["content"], message.get("annotations")
             ), changed
 
+        if streamed:
+            yield {"type": "reset"}
         messages.append(message)
         for call in tool_calls:
-            result, call_changed = run_tool(
-                call["function"]["name"], call["function"]["arguments"]
-            )
+            name = call["function"]["name"]
+            yield {"type": "status", "text": TOOL_STATUS.get(name, "Working…")}
+            result, call_changed = run_tool(name, call["function"]["arguments"])
             changed = changed or call_changed
             messages.append(
                 {"role": "tool", "tool_call_id": call["id"], "content": result}
@@ -516,31 +543,43 @@ def _last_unanswered_message(conversation_id: uuid.UUID) -> ChatMessageOut | Non
     return _list_messages(ChatMessage.id == last.id)[0]
 
 
-def _exchange(
-    conversation_id: uuid.UUID,
-    content: str | None,
-    file_uuids: list[uuid.UUID],
-    build_messages: Callable[[list[ChatMessageOut], str | None], list[dict[str, Any]]],
-    tools: list[dict[str, Any]] | None = None,
-    run_tool: ToolRunner | None = None,
-) -> ChatReply:
+def _user_message(
+    conversation_id: uuid.UUID, content: str | None, file_uuids: list[uuid.UUID]
+) -> ChatMessageOut:
     """
-    Saves the learner's message (or, with content None, takes the last
-    unanswered one again), builds the model messages from the conversation
-    history, asks the model and saves its reply.
+    Saves the learner's message, or with content None returns the last
+    unanswered one again.
 
     Raises:
         NothingToRetryError: if content is None and there is nothing to answer
-        OpenRouterError: if the model or embeddings request fails; the user's
-            message stays saved
     """
 
     if content is None:
-        user_message = _last_unanswered_message(conversation_id)
-        if user_message is None:
+        message = _last_unanswered_message(conversation_id)
+        if message is None:
             raise NothingToRetryError()
-    else:
-        user_message = add_message(conversation_id, "user", content, file_uuids)
+        return message
+    return add_message(conversation_id, "user", content, file_uuids)
+
+
+def _exchange(
+    conversation_id: uuid.UUID,
+    user_message: ChatMessageOut,
+    build_messages: Callable[[list[ChatMessageOut], str | None], list[dict[str, Any]]],
+    tools: list[dict[str, Any]],
+    run_tool: ToolRunner,
+) -> Iterator[ChatEvent]:
+    """
+    Builds the model messages from the conversation history, streams the
+    model's answer as chat events and saves it. The last event is "done" with
+    both saved messages.
+
+    Raises:
+        OpenRouterError: if the model or embeddings request fails; the user's
+            message stays saved and nothing of the partial answer is saved
+    """
+
+    yield {"type": "user_message", "message": user_message}
 
     summary, history = _conversation_window(conversation_id)
     messages = build_messages(history, summary)
@@ -557,17 +596,17 @@ def _exchange(
         ]
     messages = fit_to_budget(messages)
 
-    if tools:
-        reply, changed = _ask_with_tools(messages, tools, run_tool)
-    else:
-        reply, changed = send_query(messages), False
+    reply, changed = yield from _ask_with_tools(messages, tools, run_tool)
     assistant_message = add_message(conversation_id, "assistant", reply)
 
-    return ChatReply(
-        user_message=user_message,
-        assistant_message=assistant_message,
-        course_changed=changed,
-    )
+    yield {
+        "type": "done",
+        "reply": ChatReply(
+            user_message=user_message,
+            assistant_message=assistant_message,
+            course_changed=changed,
+        ),
+    }
 
 
 def add_course_note(
@@ -603,17 +642,18 @@ def send_topic_message(
     topic_id: uuid.UUID,
     content: str | None,
     file_uuids: list[uuid.UUID],
-) -> ChatReply | None:
+) -> Iterator[ChatEvent] | None:
     """
     Sends a message in the topic's conversation, with the lesson as context.
-    With content None, answers the last unanswered message again.
+    With content None, answers the last unanswered message again. The message
+    is saved at once; the model's answer streams while the events are read.
 
     Returns:
-        ChatReply | None: both messages, or None if the topic does not exist
+        Iterator[ChatEvent] | None: the chat events (see _exchange), or None if
+            the topic does not exist
 
     Raises:
-        OpenRouterError: if the model or embeddings request fails; the user's
-            message stays saved
+        NothingToRetryError: if content is None and there is nothing to answer
     """
 
     topic = get_topic(topic_id)
@@ -645,10 +685,11 @@ def send_topic_message(
             learner_profile=format_learner_profile(topic.course_id),
         )
 
+    conversation_id = get_or_create_conversation(topic.course_id, topic_id)
+    user_message = _user_message(conversation_id, content, file_uuids)
     return _exchange(
-        get_or_create_conversation(topic.course_id, topic_id),
-        content,
-        file_uuids,
+        conversation_id,
+        user_message,
         build,
         tools=TOPIC_TOOLS,
         run_tool=lambda name, arguments: run_topic_tool(
@@ -661,17 +702,19 @@ def send_course_message(
     course_id: uuid.UUID,
     content: str | None,
     file_uuids: list[uuid.UUID],
-) -> ChatReply | None:
+) -> Iterator[ChatEvent] | None:
     """
     Sends a message in the course conversation, with the outline and progress
     as context. With content None, answers the last unanswered message again.
+    The message is saved at once; the model's answer streams while the events
+    are read.
 
     Returns:
-        ChatReply | None: both messages, or None if the course does not exist
+        Iterator[ChatEvent] | None: the chat events (see _exchange), or None if
+            the course does not exist
 
     Raises:
-        OpenRouterError: if the model or embeddings request fails; the user's
-            message stays saved
+        NothingToRetryError: if content is None and there is nothing to answer
     """
 
     course = get_course(course_id)
@@ -698,23 +741,24 @@ def send_course_message(
             learner_profile=format_learner_profile(course_id),
         )
 
+    conversation_id = get_or_create_conversation(course_id)
+    user_message = _user_message(conversation_id, content, file_uuids)
     return _exchange(
-        get_or_create_conversation(course_id),
-        content,
-        file_uuids,
+        conversation_id,
+        user_message,
         build,
         tools=COURSE_TOOLS,
         run_tool=lambda name, arguments: run_course_tool(course_id, name, arguments),
     )
 
 
-def retry_topic_message(topic_id: uuid.UUID) -> ChatReply | None:
+def retry_topic_message(topic_id: uuid.UUID) -> Iterator[ChatEvent] | None:
     """Asks the model again to answer the last unanswered message of a topic chat."""
 
     return send_topic_message(topic_id, None, [])
 
 
-def retry_course_message(course_id: uuid.UUID) -> ChatReply | None:
+def retry_course_message(course_id: uuid.UUID) -> Iterator[ChatEvent] | None:
     """Asks the model again to answer the last unanswered message of a course chat."""
 
     return send_course_message(course_id, None, [])

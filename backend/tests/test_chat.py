@@ -14,6 +14,7 @@ from src.chat import (
     format_tasks_for_chat,
     split_for_summary,
 )
+from src.openrouter import OpenRouterError
 from src.schemas import (
     AttachmentOut,
     AttemptOut,
@@ -480,13 +481,13 @@ def test_retry_without_an_unanswered_message_raises(monkeypatch):
     monkeypatch.setattr(chat, "_last_unanswered_message", lambda conversation_id: None)
 
     with pytest.raises(chat.NothingToRetryError):
-        chat._exchange(uuid.uuid4(), None, [], lambda history, summary: [])
+        chat._user_message(uuid.uuid4(), None, [])
 
 
-def test_retry_answers_the_saved_message_without_saving_it_again(monkeypatch):
+def fake_exchange_world(monkeypatch, last, stream):
+    """Replaces the database and the model around _exchange; returns saved roles."""
+
     saved = []
-    last = make_message(7, "user", "Explain borrowing")
-    monkeypatch.setattr(chat, "_last_unanswered_message", lambda conversation_id: last)
     monkeypatch.setattr(
         chat, "_conversation_window", lambda conversation_id: (None, [last])
     )
@@ -498,21 +499,103 @@ def test_retry_answers_the_saved_message_without_saving_it_again(monkeypatch):
             make_message(8, role, content),
         )[1],
     )
-    monkeypatch.setattr(chat, "send_query", lambda messages: "Answer")
+    monkeypatch.setattr(chat, "stream_query_with_tools", stream)
+    return saved
 
-    reply = chat._exchange(
-        uuid.uuid4(),
-        None,
-        [],
-        lambda history, summary: [
-            {"role": "system", "content": "S"},
-            {"role": "user", "content": history[-1].content},
-        ],
+
+def build_simple(history, summary):
+    return [
+        {"role": "system", "content": "S"},
+        {"role": "user", "content": history[-1].content},
+    ]
+
+
+def test_retry_answers_the_saved_message_without_saving_it_again(monkeypatch):
+    last = make_message(7, "user", "Explain borrowing")
+    monkeypatch.setattr(chat, "_last_unanswered_message", lambda conversation_id: last)
+
+    def stream(messages, tools):
+        yield "delta", "Answer"
+        yield "message", {"content": "Answer"}
+
+    saved = fake_exchange_world(monkeypatch, last, stream)
+
+    user_message = chat._user_message(uuid.uuid4(), None, [])
+    events = list(
+        chat._exchange(
+            uuid.uuid4(), user_message, build_simple, [], lambda name, args: ("", False)
+        )
     )
 
     assert saved == ["assistant"]
+    reply = events[-1]["reply"]
     assert reply.user_message == last
     assert reply.assistant_message.content == "Answer"
+
+
+def test_exchange_streams_text_and_ends_with_the_saved_reply(monkeypatch):
+    last = make_message(7, "user", "Newest Rust?")
+
+    def stream(messages, tools):
+        yield "delta", "Rust "
+        yield "delta", "1.90"
+        yield (
+            "message",
+            {
+                "content": "Rust 1.90",
+                "annotations": [
+                    {
+                        "type": "url_citation",
+                        "url_citation": {"url": "https://x.dev", "title": "X"},
+                    }
+                ],
+            },
+        )
+
+    fake_exchange_world(monkeypatch, last, stream)
+
+    events = list(
+        chat._exchange(
+            uuid.uuid4(), last, build_simple, [], lambda name, args: ("", False)
+        )
+    )
+
+    assert [event["type"] for event in events] == [
+        "user_message",
+        "delta",
+        "delta",
+        "done",
+    ]
+    assert events[0]["message"] == last
+    assert events[-1]["reply"].assistant_message.content == (
+        "Rust 1.90\n\n**Sources**\n- [X](https://x.dev)"
+    )
+    assert events[-1]["reply"].course_changed is False
+
+
+def test_exchange_error_mid_stream_saves_no_partial_answer(monkeypatch):
+    last = make_message(7, "user", "Explain borrowing")
+
+    def stream(messages, tools):
+        yield "delta", "Borrowing is"
+        raise OpenRouterError("OpenRouter stream broke off")
+
+    saved = fake_exchange_world(monkeypatch, last, stream)
+
+    with pytest.raises(OpenRouterError, match="broke off"):
+        list(
+            chat._exchange(
+                uuid.uuid4(), last, build_simple, [], lambda name, args: ("", False)
+            )
+        )
+
+    assert saved == []
+
+
+def test_send_course_message_for_missing_course_returns_none_at_once(monkeypatch):
+    monkeypatch.setattr(chat, "get_course", lambda course_id: None)
+
+    assert chat.send_course_message(uuid.uuid4(), "Hi", []) is None
 
 
 def test_learner_profile_section_in_both_chats():

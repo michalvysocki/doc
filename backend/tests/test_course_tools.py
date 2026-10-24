@@ -56,13 +56,37 @@ def test_outline_can_include_topic_ids():
     assert outline == f"- Basics (id: {topic.id})"
 
 
+def fake_stream(monkeypatch, respond):
+    """Replaces the model stream: respond(messages) gives the model's message."""
+
+    def fake(messages, tools):
+        message = respond(messages)
+        if message.get("content"):
+            yield "delta", message["content"]
+        yield "message", message
+
+    monkeypatch.setattr(chat, "stream_query_with_tools", fake)
+
+
+def run(generator):
+    """Reads all events of a generator and returns them with its return value."""
+
+    events = []
+    while True:
+        try:
+            events.append(next(generator))
+        except StopIteration as stop:
+            return events, stop.value
+
+
 def test_ask_with_tools_returns_text_answer_without_tools(monkeypatch):
-    monkeypatch.setattr(
-        chat, "send_query_with_tools", lambda messages, tools: {"content": "Hi"}
+    fake_stream(monkeypatch, lambda messages: {"content": "Hi"})
+
+    events, (answer, changed) = run(
+        chat._ask_with_tools([], [], lambda name, args: ("", False))
     )
 
-    answer, changed = chat._ask_with_tools([], [], lambda name, args: ("", False))
-
+    assert events == [{"type": "delta", "text": "Hi"}]
     assert (answer, changed) == ("Hi", False)
 
 
@@ -75,11 +99,11 @@ def test_ask_with_tools_runs_tool_and_sends_result_back(monkeypatch):
     )
     seen = []
 
-    def fake_send(messages, tools):
+    def respond(messages):
         seen.append([dict(m) for m in messages])
         return next(responses)
 
-    monkeypatch.setattr(chat, "send_query_with_tools", fake_send)
+    fake_stream(monkeypatch, respond)
     calls = []
 
     def run_tool(name, arguments):
@@ -87,7 +111,7 @@ def test_ask_with_tools_runs_tool_and_sends_result_back(monkeypatch):
         return "Added 1 topics: X", True
 
     messages = [{"role": "user", "content": "add X"}]
-    answer, changed = chat._ask_with_tools(messages, ["tool"], run_tool)
+    events, (answer, changed) = run(chat._ask_with_tools(messages, ["tool"], run_tool))
 
     assert (answer, changed) == ("Added it", True)
     assert calls == [("add_topics", {"x": 1})]
@@ -96,26 +120,41 @@ def test_ask_with_tools_runs_tool_and_sends_result_back(monkeypatch):
         "tool_call_id": "call_1",
         "content": "Added 1 topics: X",
     }
+    assert events == [
+        {"type": "status", "text": "Adding topics…"},
+        {"type": "delta", "text": "Added it"},
+    ]
+
+
+def test_ask_with_tools_resets_text_streamed_before_a_tool_call(monkeypatch):
+    responses = iter(
+        [
+            {"content": "Let me add it.", "tool_calls": [tool_call("c", {})]},
+            {"content": "Done"},
+        ]
+    )
+    fake_stream(monkeypatch, lambda messages: next(responses))
+
+    events, (answer, _) = run(
+        chat._ask_with_tools([], ["tool"], lambda name, args: ("ok", True))
+    )
+
+    assert [event["type"] for event in events] == ["delta", "reset", "status", "delta"]
+    assert answer == "Done"
 
 
 def test_ask_with_tools_stops_after_too_many_rounds(monkeypatch):
-    monkeypatch.setattr(
-        chat,
-        "send_query_with_tools",
-        lambda messages, tools: {"tool_calls": [tool_call("c", {})]},
-    )
+    fake_stream(monkeypatch, lambda messages: {"tool_calls": [tool_call("c", {})]})
 
     with pytest.raises(OpenRouterError, match="too many times"):
-        chat._ask_with_tools([], ["tool"], lambda name, args: ("ok", False))
+        run(chat._ask_with_tools([], ["tool"], lambda name, args: ("ok", False)))
 
 
 def test_ask_with_tools_rejects_empty_answer(monkeypatch):
-    monkeypatch.setattr(
-        chat, "send_query_with_tools", lambda messages, tools: {"content": None}
-    )
+    fake_stream(monkeypatch, lambda messages: {"content": None})
 
     with pytest.raises(OpenRouterError, match="empty answer"):
-        chat._ask_with_tools([], ["tool"], lambda name, args: ("", False))
+        run(chat._ask_with_tools([], ["tool"], lambda name, args: ("", False)))
 
 
 def test_run_course_tool_rejects_unknown_tool():
@@ -566,9 +605,11 @@ def test_ask_with_tools_appends_sources_of_the_final_answer(monkeypatch):
             }
         ],
     }
-    monkeypatch.setattr(chat, "send_query_with_tools", lambda messages, tools: message)
+    fake_stream(monkeypatch, lambda messages: message)
 
-    answer, changed = chat._ask_with_tools([], ["tool"], lambda name, args: ("", False))
+    _, (answer, changed) = run(
+        chat._ask_with_tools([], ["tool"], lambda name, args: ("", False))
+    )
 
     assert answer == "Rust 1.90 is the latest\n\n**Sources**\n- [X](https://x.dev)"
     assert changed is False

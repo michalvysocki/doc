@@ -11,3 +11,4 @@ def block_real_openrouter_calls(monkeypatch):
         pytest.fail(f"Test tried to call OpenRouter for real: {url}")
 
     monkeypatch.setattr(openrouter, "_post_to_openrouter", blocked)
+    monkeypatch.setattr(openrouter, "_stream_from_openrouter", blocked)

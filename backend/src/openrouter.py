@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -219,6 +220,13 @@ class OpenRouterError(Exception):
     """Raised when a request to OpenRouter fails or returns an unexpected response."""
 
 
+def _headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
 def _post_to_openrouter(
     url: str, payload: dict[str, Any], timeout: int
 ) -> dict[str, Any]:
@@ -232,10 +240,7 @@ def _post_to_openrouter(
     try:
         response = requests.post(
             url=url,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            headers=_headers(),
             data=json.dumps(payload),
             timeout=timeout,
         )
@@ -250,21 +255,59 @@ def _post_to_openrouter(
     return data
 
 
-def send_query(messages: list[dict[str, Any]]) -> str:
-    data = _post_to_openrouter(
-        URL,
-        {
-            "model": MODEL,
-            "messages": messages,
-            "plugins": [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
-        },
-        timeout=120,
-    )
+def _stream_from_openrouter(
+    url: str, payload: dict[str, Any], timeout: int
+) -> Iterator[dict[str, Any]]:
+    """
+    Sends a streaming POST request to OpenRouter and yields every parsed chunk
+    of the server-sent events, until "[DONE]".
+
+    Raises:
+        OpenRouterError: if the request fails, OpenRouter returns an error status,
+            or the stream reports an error or breaks off
+    """
 
     try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as e:
-        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+        response = requests.post(
+            url=url,
+            headers=_headers(),
+            data=json.dumps({**payload, "stream": True}),
+            timeout=timeout,
+            stream=True,
+        )
+    except requests.RequestException as e:
+        raise OpenRouterError(f"Request to OpenRouter failed: {e}") from e
+
+    with response:
+        if not response.ok:
+            try:
+                message = (
+                    response.json().get("error", {}).get("message", "Unknown error")
+                )
+            except ValueError:
+                message = "Unknown error"
+            raise OpenRouterError(
+                f"OpenRouter returned {response.status_code}: {message}"
+            )
+
+        # Server-sent events carry no charset, so requests would guess ISO-8859-1.
+        response.encoding = "utf-8"
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                # Empty lines separate events; ": OPENROUTER PROCESSING" keeps the
+                # connection alive.
+                if not line or not line.startswith("data: "):
+                    continue
+                data = line.removeprefix("data: ")
+                if data == "[DONE]":
+                    return
+                chunk = json.loads(data)
+                if "error" in chunk:
+                    message = chunk["error"].get("message", "Unknown error")
+                    raise OpenRouterError(f"OpenRouter stream failed: {message}")
+                yield chunk
+        except (requests.RequestException, ValueError) as e:
+            raise OpenRouterError(f"OpenRouter stream broke off: {e}") from e
 
 
 def with_web_search(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -309,15 +352,21 @@ def append_sources(content: str, annotations: list[dict[str, Any]] | None) -> st
     return f"{content}\n\n**Sources**\n" + "\n".join(lines)
 
 
-def send_query_with_tools(
+def stream_query_with_tools(
     messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-) -> dict[str, Any]:
+) -> Iterator[tuple[str, Any]]:
     """
-    Sends messages with tool definitions and returns the model's message, which
-    contains either text content or tool_calls.
+    Sends messages with tool definitions and streams the model's answer. Yields
+    ("delta", text) for every piece of text as it arrives, and at the end
+    ("message", message) with the content, tool_calls and annotations put
+    together; a message with tool_calls and no text has content None.
     """
 
-    data = _post_to_openrouter(
+    content: list[str] = []
+    tool_calls: dict[int, dict[str, Any]] = {}
+    annotations: list[dict[str, Any]] = []
+
+    for chunk in _stream_from_openrouter(
         URL,
         {
             "model": MODEL,
@@ -326,12 +375,39 @@ def send_query_with_tools(
             "plugins": [{"id": "file-parser", "pdf": {"engine": "cloudflare-ai"}}],
         },
         timeout=120,
-    )
+    ):
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        delta = choices[0].get("delta") or {}
 
-    try:
-        return data["choices"][0]["message"]
-    except (KeyError, IndexError) as e:
-        raise OpenRouterError("Unexpected response format from OpenRouter") from e
+        if text := delta.get("content"):
+            content.append(text)
+            yield "delta", text
+
+        # A tool call arrives in pieces: the id and name first, the arguments split up.
+        for piece in delta.get("tool_calls") or []:
+            call = tool_calls.setdefault(
+                piece.get("index", 0),
+                {
+                    "id": None,
+                    "type": "function",
+                    "function": {"name": "", "arguments": ""},
+                },
+            )
+            call["id"] = piece.get("id") or call["id"]
+            function = piece.get("function") or {}
+            call["function"]["name"] += function.get("name") or ""
+            call["function"]["arguments"] += function.get("arguments") or ""
+
+        annotations.extend(delta.get("annotations") or [])
+
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(content) or None}
+    if tool_calls:
+        message["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
+    if annotations:
+        message["annotations"] = annotations
+    yield "message", message
 
 
 def image_part(data: bytes, media_type: str) -> dict[str, Any]:
