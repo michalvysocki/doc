@@ -3,13 +3,15 @@ from collections import defaultdict
 from datetime import UTC, datetime, time, timedelta
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .courses import due_condition, get_course, get_file_materials, get_topic
 from .database import SessionLocal
+from .learner_profile import format_learner_profile
 from .learner_settings import get_about
 from .models import Task, TaskAttempt, Topic
-from .openrouter import generate_tasks, grade_answer
+from .openrouter import generate_follow_up_task, generate_tasks, grade_answer
 from .schemas import AttemptOut, GeneratedTask, ReviewTaskOut, TaskOut
 
 REVIEW_LADDER_DAYS = [1, 3, 7, 14, 30]
@@ -17,6 +19,10 @@ REVIEW_LADDER_DAYS = [1, 3, 7, 14, 30]
 
 class LessonMissingError(Exception):
     """Raised when tasks are requested for a topic without a lesson."""
+
+
+class FollowUpError(Exception):
+    """Raised when a follow-up task cannot be made for an attempt."""
 
 
 def _attempt_out(attempt: TaskAttempt) -> AttemptOut:
@@ -85,6 +91,7 @@ def get_tasks(topic_id: uuid.UUID) -> list[TaskOut]:
         ).all()
 
         attempts = _attempts_by_task(session, [task.id for task in tasks])
+        sources = _follow_up_sources(session, tasks)
 
         return [
             TaskOut(
@@ -92,9 +99,106 @@ def get_tasks(topic_id: uuid.UUID) -> list[TaskOut]:
                 position=task.position,
                 question=task.question,
                 attempts=attempts[task.id],
+                source_attempt_id=task.source_attempt_id,
+                follow_up_of=sources.get(task.source_attempt_id),
             )
             for task in tasks
         ]
+
+
+def _follow_up_sources(session: Session, tasks: list[Task]) -> dict[int, uuid.UUID]:
+    """Returns the task of each source attempt of follow-up tasks."""
+
+    attempt_ids = [task.source_attempt_id for task in tasks if task.source_attempt_id]
+    if not attempt_ids:
+        return {}
+    return dict(
+        session.execute(
+            select(TaskAttempt.id, TaskAttempt.task_id).where(
+                TaskAttempt.id.in_(attempt_ids)
+            )
+        ).all()
+    )
+
+
+def _follow_up_of(session: Session, attempt_id: int) -> uuid.UUID | None:
+    return session.scalar(select(Task.id).where(Task.source_attempt_id == attempt_id))
+
+
+def _task_out(topic_id: uuid.UUID, task_id: uuid.UUID) -> TaskOut:
+    return next(task for task in get_tasks(topic_id) if task.id == task_id)
+
+
+def create_follow_up(attempt_id: int) -> TaskOut | None:
+    """
+    Makes a follow-up task for an attempt that was not fully correct and adds it
+    at the end of the topic's tasks, so the numbers of other tasks stay the same.
+    A second call for the same attempt returns the task made the first time.
+
+    Returns:
+        TaskOut | None: the follow-up task, or None if the attempt does not exist
+
+    Raises:
+        FollowUpError: if the attempt is not graded or was correct
+        LessonMissingError: if the topic has no lesson
+        OpenRouterError: if generating the task fails
+    """
+
+    with SessionLocal() as session:
+        row = session.execute(
+            select(TaskAttempt, Task)
+            .join(Task, TaskAttempt.task_id == Task.id)
+            .where(TaskAttempt.id == attempt_id)
+        ).first()
+        if row is None:
+            return None
+        attempt, task = row
+        if attempt.verdict not in ("partially_correct", "incorrect"):
+            raise FollowUpError("Only answers that were not fully correct get one")
+        topic_id = task.topic_id
+        if existing := _follow_up_of(session, attempt_id):
+            return _task_out(topic_id, existing)
+        question, answer = task.question, attempt.answer
+        verdict, feedback = attempt.verdict, attempt.feedback or ""
+
+    topic = get_topic(topic_id)
+    if topic is None or topic.explanation is None:
+        raise LessonMissingError()
+
+    generated = generate_follow_up_task(
+        course_title=topic.course_title,
+        path=[link.title for link in topic.path],
+        title=topic.title,
+        lesson=topic.explanation,
+        question=question,
+        answer=answer,
+        verdict=verdict,
+        feedback=feedback,
+        about=get_about(),
+    )
+
+    try:
+        with SessionLocal() as session, session.begin():
+            last = session.scalar(
+                select(func.max(Task.position)).where(
+                    Task.topic_id == topic_id, Task.archived_at.is_(None)
+                )
+            )
+            new_task = Task(
+                topic_id=topic_id,
+                position=0 if last is None else last + 1,
+                question=generated.question,
+                grading_notes=generated.grading_notes,
+                source_attempt_id=attempt_id,
+            )
+            session.add(new_task)
+            session.flush()
+            new_id = new_task.id
+    except IntegrityError:
+        # Made in the meantime by a second click: return that one.
+        with SessionLocal() as session:
+            new_id = _follow_up_of(session, attempt_id)
+    return _task_out(topic_id, new_id)
 
 
 def create_tasks(
@@ -143,6 +247,7 @@ def create_tasks(
         materials=materials,
         goal=course.initial_prompt if course else None,
         about=get_about(),
+        learner_profile=format_learner_profile(topic.course_id),
     )
 
     with SessionLocal() as session, session.begin():

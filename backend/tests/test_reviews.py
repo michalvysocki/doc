@@ -137,3 +137,31 @@ def test_rebuild_review_gets_the_unknown_id_issue(monkeypatch):
 
     checks = sent[1]["messages"][1]["content"].split("AUTOMATIC CHECKS:\n")[1]
     assert checks == f'- "Lost" points to an unknown topic id {unknown}.'
+
+
+def test_follow_up_review_uses_follow_up_criteria_and_rejects_a_copy(
+    monkeypatch, caplog
+):
+    original = "Explain the role of Cargo, the package and the binary crate."
+    draft = {
+        "question": "Is an unused function an error?",
+        "grading_notes": "A warning",
+    }
+    copy = {"tasks": [{"question": original, "grading_notes": "N"}]}
+    sent = fake_answers(monkeypatch, draft, {"issues": ["x"], "revised": copy})
+
+    with caplog.at_level(logging.WARNING, logger="src.openrouter"):
+        task = openrouter.generate_follow_up_task(
+            "Rust",
+            [],
+            "Cargo",
+            "Lesson",
+            question=original,
+            answer="a",
+            verdict="partially_correct",
+            feedback="f",
+        )
+
+    assert "Criteria for a follow-up task" in sent[1]["messages"][0]["content"]
+    assert task.question == "Is an unused function an error?"
+    assert "made it worse" in caplog.text

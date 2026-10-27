@@ -3,7 +3,15 @@ import { CircleCheck } from "lucide-react";
 import MarkdownContent from "./MarkdownContent";
 import AttemptView from "./AttemptView";
 
-function TaskCard({ task, index, onSubmit, onRegrade }) {
+function TaskCard({
+  task,
+  index,
+  onSubmit,
+  onRegrade,
+  onFollowUp,
+  followUpOf,
+  followUpTask,
+}) {
   const [answer, setAnswer] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -37,9 +45,16 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
   }
 
   return (
-    <li className="rounded-md bg-card p-4">
+    <li id={`task-${task.id}`} className="rounded-md bg-card p-4 scroll-mt-4">
       <div className="flex items-center justify-between">
-        <p className="type-caption text-faint">Task {index + 1}</p>
+        <p className="flex items-center gap-2 type-caption text-faint">
+          Task {index + 1}
+          {followUpOf && (
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 type-caption text-accent">
+              Follow-up to task {followUpOf}
+            </span>
+          )}
+        </p>
         {isSolved && (
           <span className="inline-flex items-center gap-1 type-caption text-good">
             <CircleCheck size={14} /> Solved
@@ -67,12 +82,16 @@ function TaskCard({ task, index, onSubmit, onRegrade }) {
             key={attempt.id}
             attempt={attempt}
             onRegrade={() => onRegrade(task.id, attempt.id)}
+            onFollowUp={onFollowUp && (() => onFollowUp(attempt.id))}
+            followUpTask={followUpTask?.(attempt.id)}
           />
         ))}
       {latest && (
         <AttemptView
           attempt={latest}
           onRegrade={() => onRegrade(task.id, latest.id)}
+          onFollowUp={onFollowUp && (() => onFollowUp(latest.id))}
+          followUpTask={followUpTask?.(latest.id)}
         />
       )}
 

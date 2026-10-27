@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
 from .schemas import (
+    GeneratedTask,
     GeneratedTaskSet,
     LessonReview,
     RebuildPlan,
@@ -21,6 +22,7 @@ from .schemas import (
     TopicMapReview,
 )
 from .validation import (
+    check_follow_up,
     check_lesson,
     check_rebuild_plan,
     check_tasks,
@@ -167,6 +169,9 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "learner's goal is given, choose examples that fit it. "
     "If the learner wrote about themselves, adapt the level, pace and examples to "
     "their background; do not repeat what they say they already know. "
+    "If the learner profile from practice tasks is given and this lesson builds on "
+    "topics the learner struggles with, start with a short recap of the parts it "
+    "needs from them. "
     "You can search the web "
     "when the topic needs current information, such as recent versions or "
     "changes; do not search for well-established basics. Do not write a list of "
@@ -265,6 +270,9 @@ TASKS_SYSTEM_PROMPT = (
     "them. If the learner's goal is given, prefer practical exercises that fit it. "
     "If the learner wrote about themselves, adapt the level, pace and examples to "
     "their background; do not repeat what they say they already know. "
+    "If the learner profile from practice tasks is given, adjust the difficulty: "
+    "with mostly strong results make the tasks more demanding, with struggles "
+    "break the harder tasks into smaller steps. "
 )
 
 GRADING_SYSTEM_PROMPT = (
@@ -319,6 +327,26 @@ TASKS_REVIEW_PROMPT = REVIEW_RULES + (
     "questions are clear open questions or exercises (no multiple choice); "
     "ordered from easier to harder; grading notes are correct and list the key "
     "points of a correct answer; no task repeats another."
+)
+
+
+FOLLOW_UP_TASK_SYSTEM_PROMPT = (
+    "You create one follow-up practice task for a learner whose answer to a task "
+    "was not fully correct. Target exactly what was missing or wrong according to "
+    "the feedback. Make it a smaller, more focused step than the original task, "
+    "answerable from the lesson; do not repeat the original question. If a gap is "
+    "outside the lesson, target the other gaps. Write "
+    "grading notes listing the key points a correct answer must contain; the "
+    "learner never sees them. Write in the language of the lesson. " + MATH_FORMAT
+)
+
+
+FOLLOW_UP_REVIEW_PROMPT = REVIEW_RULES + (
+    "Criteria for a follow-up task: it targets the gaps named in the feedback and "
+    "is a smaller, more focused step than the original task; it does not repeat "
+    "the original question or ask for its whole answer again; it can be answered "
+    "from the lesson (if a gap is outside the lesson, target the other gaps); the "
+    "grading notes are correct and list the key points of a correct answer."
 )
 
 
@@ -987,6 +1015,7 @@ def generate_topic_explanation(
     goal: str | None = None,
     outline: str | None = None,
     about: str | None = None,
+    learner_profile: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     context_lines = [
         f"Course: {course_title}",
@@ -997,6 +1026,8 @@ def generate_topic_explanation(
     ]
     if section := format_about(about):
         context_lines.append(f"\n{section}")
+    if learner_profile:
+        context_lines.append(f"\n{learner_profile}")
     if subtopics:
         context_lines.append(
             "Subtopics covered in separate lessons: " + ", ".join(subtopics)
@@ -1046,6 +1077,7 @@ def generate_tasks(
     materials: str | None = None,
     goal: str | None = None,
     about: str | None = None,
+    learner_profile: str | None = None,
 ) -> GeneratedTaskSet:
     context = _with_extras(
         _with_about(
@@ -1054,6 +1086,7 @@ def generate_tasks(
             + f"Topic path: {' > '.join([*path, title])}",
             about,
         )
+        + (f"\n\n{learner_profile}" if learner_profile else "")
         + f"\n\nLESSON:\n{lesson}",
         instructions,
         materials,
@@ -1075,6 +1108,65 @@ def generate_tasks(
         lambda issues: review_tasks(context, task_set, issues),
         lambda result: result.revised,
     )
+
+
+def review_follow_up(
+    context: str, task_set: GeneratedTaskSet, issues: list[str]
+) -> TaskSetReview:
+    return _review(
+        FOLLOW_UP_REVIEW_PROMPT,
+        context,
+        task_set.model_dump_json(indent=1),
+        issues,
+        TaskSetReview,
+        name="follow_up_review",
+        model=REVIEW_MODEL,
+    )
+
+
+def generate_follow_up_task(
+    course_title: str,
+    path: list[str],
+    title: str,
+    lesson: str,
+    question: str,
+    answer: str,
+    verdict: str,
+    feedback: str,
+    about: str | None = None,
+) -> GeneratedTask:
+    """
+    Generates one task that targets what an answer missed. The grading notes of
+    the original task are left out, so the new task is built on the feedback
+    rather than on the model answer.
+    """
+
+    context = _with_about(
+        f"Course: {course_title}\nTopic path: {' > '.join([*path, title])}", about
+    ) + (
+        f"\n\nLESSON:\n{lesson}\n\nORIGINAL TASK:\n{question}\n\n"
+        f"LEARNER'S ANSWER:\n{answer}\n\nGRADE: {verdict}\nFEEDBACK:\n{feedback}"
+    )
+    task = _structured_query(
+        [
+            {"role": "system", "content": FOLLOW_UP_TASK_SYSTEM_PROMPT},
+            {"role": "user", "content": context},
+        ],
+        GeneratedTask,
+        name="follow_up_task",
+        timeout=120,
+    )
+    # Reviewed with follow-up criteria; the reviewer sees the same context.
+    draft = GeneratedTaskSet(tasks=[task])
+    reviewed = _reviewed(
+        "Follow-up task",
+        title,
+        draft,
+        lambda tasks: check_follow_up(tasks, question),
+        lambda issues: review_follow_up(context, draft, issues),
+        lambda result: result.revised,
+    )
+    return reviewed.tasks[0] if reviewed.tasks else task
 
 
 def generate_rebuild_plan(

@@ -370,6 +370,8 @@ class TaskOut(BaseModel):
     position: int
     question: str
     attempts: list[AttemptOut]
+    source_attempt_id: int | None = None  # set for follow-up tasks
+    follow_up_of: uuid.UUID | None = None  # the task whose attempt it follows
 
 
 class ReviewTaskOut(TaskOut):

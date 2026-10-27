@@ -71,3 +71,41 @@ def test_patch_missing_course_returns_404(monkeypatch):
     response = client.patch(f"/courses/{uuid.uuid4()}", json={"initial_prompt": "x"})
 
     assert response.status_code == 404
+
+
+def test_follow_up_endpoint_returns_the_new_task(monkeypatch):
+    from src.schemas import TaskOut
+
+    task_id = uuid.uuid4()
+    monkeypatch.setattr(
+        main,
+        "create_follow_up",
+        lambda attempt_id: TaskOut(
+            id=task_id, position=6, question="Q", attempts=[], source_attempt_id=5
+        ),
+    )
+
+    response = client.post("/attempts/5/follow-up")
+
+    assert response.status_code == 201
+    assert response.json()["source_attempt_id"] == 5
+
+
+def test_follow_up_endpoint_errors(monkeypatch):
+    from src.openrouter import OpenRouterError
+    from src.tasks import FollowUpError
+
+    cases = [
+        (FollowUpError("Only answers that were not fully correct get one"), 409),
+        (OpenRouterError("down"), 502),
+    ]
+    for error, status in cases:
+
+        def fail(attempt_id, error=error):
+            raise error
+
+        monkeypatch.setattr(main, "create_follow_up", fail)
+        assert client.post("/attempts/5/follow-up").status_code == status
+
+    monkeypatch.setattr(main, "create_follow_up", lambda attempt_id: None)
+    assert client.post("/attempts/5/follow-up").status_code == 404

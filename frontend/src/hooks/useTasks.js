@@ -130,6 +130,22 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
     }));
   }
 
+  // Creates (or gets the existing) follow-up task for an attempt.
+  async function addFollowUp(attemptId) {
+    const forTopicId = topicId;
+    const task = await fetchJson(`/attempts/${attemptId}/follow-up`, {
+      method: "POST",
+    });
+    setResult((prev) =>
+      prev.topicId === forTopicId &&
+      prev.tasks &&
+      !prev.tasks.some((existing) => existing.id === task.id)
+        ? { ...prev, tasks: [...prev.tasks, task] }
+        : prev,
+    );
+    return task;
+  }
+
   const isCurrent = result.topicId === topicId;
 
   return {
@@ -138,5 +154,6 @@ export default function useTasks(topicId, hasLesson, refreshKey = 0) {
     error: isCurrent ? result.error : null,
     submitAttempt,
     regradeAttempt,
+    addFollowUp,
   };
 }

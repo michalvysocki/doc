@@ -2,6 +2,7 @@
 
 import re
 import uuid
+from difflib import SequenceMatcher
 
 from .schemas import GeneratedTaskSet, RebuildPlan, TopicMap
 
@@ -112,6 +113,29 @@ def check_tasks(task_set: GeneratedTaskSet) -> list[str]:
         if key and key in seen:
             issues.append(f"Task {number} repeats an earlier question.")
         seen.add(key)
+    return issues
+
+
+# Above this a follow-up task is a reworded copy of the original task.
+MAX_FOLLOW_UP_SIMILARITY = 0.6
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def check_follow_up(task_set: GeneratedTaskSet, original_question: str) -> list[str]:
+    """Checks a follow-up task like other tasks, and that it is not the original again."""
+
+    issues = check_tasks(task_set)
+    original = _normalized(original_question)
+    for task in task_set.tasks:
+        ratio = SequenceMatcher(None, _normalized(task.question), original).ratio()
+        if ratio > MAX_FOLLOW_UP_SIMILARITY:
+            issues.append(
+                "The task repeats the original task instead of targeting what the "
+                "answer missed."
+            )
     return issues
 
 

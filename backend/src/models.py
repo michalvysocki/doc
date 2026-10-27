@@ -76,6 +76,10 @@ class Task(Base):
     # again (None until the task has its first graded attempt).
     review_streak: Mapped[int] = mapped_column(server_default=text("0"))
     review_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The attempt this task was made for ("Practice this"); one per attempt.
+    source_attempt_id: Mapped[int | None] = mapped_column(
+        ForeignKey("task_attempts.id", ondelete="SET NULL"), unique=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

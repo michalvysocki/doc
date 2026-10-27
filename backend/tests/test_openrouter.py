@@ -689,3 +689,63 @@ def test_learner_description_reaches_map_lesson_and_tasks(monkeypatch):
 
     assert all("ABOUT THE LEARNER" in text for text in sent[:3])
     assert "ABOUT THE LEARNER" not in sent[3]
+
+
+def test_lessons_and_tasks_get_the_profile_from_practice_tasks(monkeypatch):
+    sent = []
+
+    def capture(url, payload, timeout):
+        sent.append(payload["messages"][1]["content"])
+        is_tasks = "response_format" in payload
+        content = json.dumps({"tasks": []}) if is_tasks else "Lesson"
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", False)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    profile = "LEARNER PROFILE (from practice tasks):\n- Struggles with: Borrowing"
+
+    openrouter.generate_topic_explanation(
+        "Rust", [], "Lifetimes", "d", [], learner_profile=profile
+    )
+    openrouter.generate_tasks(
+        "Rust", [], "Lifetimes", "Lesson", learner_profile=profile
+    )
+    openrouter.generate_tasks("Rust", [], "Lifetimes", "Lesson")
+
+    assert profile in sent[0]
+    assert sent[1].index(profile) < sent[1].index("LESSON:")
+    assert "LEARNER PROFILE" not in sent[2]
+
+
+def test_lesson_and_task_prompts_explain_how_to_use_the_profile():
+    assert "short recap" in openrouter.TOPIC_EXPLANATION_SYSTEM_PROMPT
+    assert "adjust the difficulty" in openrouter.TASKS_SYSTEM_PROMPT
+
+
+def test_follow_up_task_targets_the_feedback_without_the_grading_notes(monkeypatch):
+    sent = {}
+
+    def capture(url, payload, timeout):
+        sent.update(payload)
+        task = {"question": "Why does s1 move?", "grading_notes": "String is not Copy"}
+        return {"choices": [{"message": {"content": json.dumps(task)}}]}
+
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    task = openrouter.generate_follow_up_task(
+        "Rust",
+        [],
+        "Ownership",
+        "Lesson text",
+        question="Explain moves.",
+        answer="It copies.",
+        verdict="incorrect",
+        feedback="Missing: String is moved, not copied.",
+    )
+
+    user = sent["messages"][1]["content"]
+    assert "GRADE: incorrect" in user
+    assert "Missing: String is moved" in user
+    assert "GRADING NOTES" not in user
+    assert sent["response_format"]["json_schema"]["name"] == "follow_up_task"
+    assert task.question == "Why does s1 move?"

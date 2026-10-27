@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .file_parsing import ParsedFile
+from .learner_profile import format_learner_profile
 from .learner_settings import get_about
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import (
@@ -634,6 +635,7 @@ def create_explanation(
         goal=course.initial_prompt if course else None,
         outline=format_course_outline(course.topics, topic.id) if course else None,
         about=get_about(),
+        learner_profile=format_learner_profile(topic.course_id),
     )
 
     sources = merge_sources(web_sources, file_sources)

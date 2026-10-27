@@ -75,7 +75,9 @@ from .schemas import (
     TopicDetail,
 )
 from .tasks import (
+    FollowUpError,
     LessonMissingError,
+    create_follow_up,
     create_tasks,
     get_due_reviews,
     get_tasks,
@@ -426,6 +428,25 @@ def post_attempt(task_id: uuid.UUID, request: AttemptCreate):
         raise HTTPException(status_code=404, detail="Task not found")
 
     return attempt
+
+
+@app.post("/attempts/{attempt_id}/follow-up", status_code=201, response_model=TaskOut)
+def post_follow_up(attempt_id: int):
+    try:
+        task = create_follow_up(attempt_id)
+    except FollowUpError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except LessonMissingError as e:
+        raise HTTPException(
+            status_code=409, detail="The lesson has not been generated yet"
+        ) from e
+    except OpenRouterError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+    if task is None:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    return task
 
 
 @app.post("/attempts/{attempt_id}/grade", response_model=AttemptOut)

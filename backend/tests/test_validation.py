@@ -7,6 +7,7 @@ from src.schemas import (
     TopicNode,
 )
 from src.validation import (
+    check_follow_up,
     check_lesson,
     check_rebuild_plan,
     check_tasks,
@@ -149,3 +150,36 @@ def test_strip_links_from_tree_cleans_every_level():
     strip_links_from_tree(topic_map.topics)
 
     assert topic_map.topics[0].children[0].description == "Moves."
+
+
+def test_follow_up_that_rewords_the_original_is_reported():
+    original = (
+        "Describe a small embedded project: the role of Cargo, the package, the "
+        "binary crate and where the program starts."
+    )
+    copy = GeneratedTaskSet(
+        tasks=[
+            GeneratedTask(
+                question=(
+                    "Describe a small embedded project: what Cargo does, the package, "
+                    "the binary crate and where the program starts."
+                ),
+                grading_notes="N",
+            )
+        ]
+    )
+    focused = GeneratedTaskSet(
+        tasks=[
+            GeneratedTask(
+                question="Is an unused function an error or a warning? Explain.",
+                grading_notes="N",
+            )
+        ]
+    )
+
+    repeated = (
+        "The task repeats the original task instead of targeting what the answer "
+        "missed."
+    )
+    assert check_follow_up(copy, original) == [repeated]
+    assert check_follow_up(focused, original) == []

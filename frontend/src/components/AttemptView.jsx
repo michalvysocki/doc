@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Target } from "lucide-react";
 import MarkdownContent from "./MarkdownContent";
+import { scrollToTask } from "../utils/scroll";
 
 const VERDICTS = {
   correct: { label: "Correct", className: "bg-good/10 text-good" },
@@ -10,10 +12,27 @@ const VERDICTS = {
   incorrect: { label: "Incorrect", className: "bg-warn/10 text-warn" },
 };
 
-function AttemptView({ attempt, onRegrade }) {
+function AttemptView({ attempt, onRegrade, onFollowUp, followUpTask }) {
   const [isGrading, setIsGrading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState(null);
   const verdict = VERDICTS[attempt.verdict];
+  const canPractice =
+    onFollowUp &&
+    (attempt.verdict === "partially_correct" ||
+      attempt.verdict === "incorrect");
+
+  async function handleFollowUp() {
+    setIsCreating(true);
+    setError(null);
+    try {
+      await onFollowUp();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setIsCreating(false);
+    }
+  }
 
   async function handleRegrade() {
     setIsGrading(true);
@@ -41,6 +60,26 @@ function AttemptView({ attempt, onRegrade }) {
           <div className="prose prose-sm max-w-none mt-2">
             <MarkdownContent>{attempt.feedback}</MarkdownContent>
           </div>
+          {canPractice &&
+            (followUpTask ? (
+              <button
+                type="button"
+                onClick={() => scrollToTask(followUpTask.id)}
+                className="mt-2 type-caption text-accent hover:underline"
+              >
+                Practice task added: task {followUpTask.number} →
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFollowUp}
+                disabled={isCreating}
+                className="btn-secondary btn-sm mt-2"
+              >
+                <Target size={12} />
+                {isCreating ? "Creating a task..." : "Practice this"}
+              </button>
+            ))}
         </>
       ) : (
         <div className="mt-2 flex items-center gap-2">
