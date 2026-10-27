@@ -119,7 +119,10 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "Do not number the topic "
     "titles. Write titles and descriptions in the same language as the user's "
     "request. If course materials are given, base the map on them where they are "
-    "relevant and cover what they contain. You can search the web when the course "
+    "relevant and cover what they contain. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
+    "You can search the web when the course "
     "needs current information, such as new versions or recent tools; do not "
     "search for well-established subjects."
 )
@@ -141,6 +144,8 @@ REBUILD_SYSTEM_PROMPT = (
     "Prefer keeping topics with progress. Use each id at most once and null for "
     "new topics. Existing topics you leave out will be deleted. Do not number the "
     "titles. Write in the language of the course. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
     "You can search the web when the course needs current information, such as "
     "new versions or recent tools; do not search for well-established subjects."
 )
@@ -159,7 +164,10 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "learner gives instructions, follow them. If the course outline is given, do "
     "not explain in detail what other topics of the course cover; refer to them by "
     "title instead, and build on the topics listed before this one. If the "
-    "learner's goal is given, choose examples that fit it. You can search the web "
+    "learner's goal is given, choose examples that fit it. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
+    "You can search the web "
     "when the topic needs current information, such as recent versions or "
     "changes; do not search for well-established basics. Do not write a list of "
     "sources; it is added automatically."
@@ -196,6 +204,8 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "cover. Do not write your own list of sources; it is added automatically. "
     "If the learner profile shows they struggled with this or a related topic, "
     "take it into account when explaining. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
     "Answer in the language of the learner's last message and use Markdown. "
     + MATH_FORMAT
 )
@@ -233,6 +243,8 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     "cover. Do not write your own list of sources; it is added automatically. "
     "Use the learner profile to suggest what to review or study next; when tasks "
     "are due for review, mention it when the learner asks what to do. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
     "Answer in the language of the learner's last message and use Markdown. "
     + MATH_FORMAT
 )
@@ -250,7 +262,9 @@ TASKS_SYSTEM_PROMPT = (
     "language as the lesson. If course materials are given, use them as "
     "inspiration for the style, topics and difficulty of the tasks, but keep the "
     "tasks answerable from the lesson. If the learner gives instructions, follow "
-    "them. If the learner's goal is given, prefer practical exercises that fit it."
+    "them. If the learner's goal is given, prefer practical exercises that fit it. "
+    "If the learner wrote about themselves, adapt the level, pace and examples to "
+    "their background; do not repeat what they say they already know. "
 )
 
 GRADING_SYSTEM_PROMPT = (
@@ -906,10 +920,11 @@ def generate_topic_map(
     initial_prompt: str,
     materials: str | None = None,
     on_status: StatusCallback | None = None,
+    about: str | None = None,
 ) -> tuple[TopicMap, list[dict[str, Any]]]:
     if on_status:
         on_status("Planning the course map…")
-    context = _with_extras(initial_prompt, None, materials)
+    context = _with_extras(_with_about(initial_prompt, about), None, materials)
     topic_map, sources = _structured_query_with_sources(
         [
             {"role": "system", "content": TOPIC_MAP_SYSTEM_PROMPT},
@@ -938,6 +953,19 @@ def generate_topic_map(
     return topic_map, sources
 
 
+def format_about(about: str | None) -> str | None:
+    """The learner's own description as a prompt section, or None if empty."""
+
+    return f"ABOUT THE LEARNER (written by the learner):\n{about}" if about else None
+
+
+def _with_about(text: str, about: str | None) -> str:
+    """Adds the learner's own description after the main part of a prompt."""
+
+    section = format_about(about)
+    return f"{text}\n\n{section}" if section else text
+
+
 def _with_extras(text: str, instructions: str | None, materials: str | None) -> str:
     """Appends course materials and the learner's instructions (last) to a prompt."""
 
@@ -958,6 +986,7 @@ def generate_topic_explanation(
     materials: str | None = None,
     goal: str | None = None,
     outline: str | None = None,
+    about: str | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     context_lines = [
         f"Course: {course_title}",
@@ -966,6 +995,8 @@ def generate_topic_explanation(
         f"Topic: {title}",
         f"Topic description: {description}",
     ]
+    if section := format_about(about):
+        context_lines.append(f"\n{section}")
     if subtopics:
         context_lines.append(
             "Subtopics covered in separate lessons: " + ", ".join(subtopics)
@@ -1014,12 +1045,16 @@ def generate_tasks(
     instructions: str | None = None,
     materials: str | None = None,
     goal: str | None = None,
+    about: str | None = None,
 ) -> GeneratedTaskSet:
     context = _with_extras(
-        f"Course: {course_title}\n"
-        + (f"Learner's goal: {goal}\n" if goal else "")
-        + f"Topic path: {' > '.join([*path, title])}\n\n"
-        f"LESSON:\n{lesson}",
+        _with_about(
+            f"Course: {course_title}\n"
+            + (f"Learner's goal: {goal}\n" if goal else "")
+            + f"Topic path: {' > '.join([*path, title])}",
+            about,
+        )
+        + f"\n\nLESSON:\n{lesson}",
         instructions,
         materials,
     )
@@ -1049,11 +1084,15 @@ def generate_rebuild_plan(
     instructions: str | None = None,
     materials: str | None = None,
     existing_ids: set[str] | None = None,
+    about: str | None = None,
 ) -> tuple[RebuildPlan, list[dict[str, Any]]]:
     context = _with_extras(
-        f"Course: {course_title}\n"
-        f"Course goal (the learner's original request): {initial_prompt}\n\n"
-        f"CURRENT OUTLINE:\n{outline}",
+        _with_about(
+            f"Course: {course_title}\n"
+            f"Course goal (the learner's original request): {initial_prompt}",
+            about,
+        )
+        + f"\n\nCURRENT OUTLINE:\n{outline}",
         instructions,
         materials,
     )

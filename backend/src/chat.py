@@ -12,12 +12,14 @@ from .course_tools import COURSE_TOOLS, TOPIC_TOOLS, run_course_tool, run_topic_
 from .courses import get_course, get_topic
 from .database import SessionLocal
 from .learner_profile import format_learner_profile
+from .learner_settings import get_about
 from .models import ChatMessage, Conversation, Document
 from .openrouter import (
     COURSE_CHAT_SYSTEM_PROMPT,
     TOPIC_CHAT_SYSTEM_PROMPT,
     OpenRouterError,
     append_sources,
+    format_about,
     image_part,
     rewrite_search_query,
     stream_query_with_tools,
@@ -384,6 +386,7 @@ def build_topic_chat_messages(
     summary: str | None = None,
     course_files: str | None = None,
     learner_profile: str | None = None,
+    about: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -399,6 +402,7 @@ def build_topic_chat_messages(
         TOPIC_CHAT_SYSTEM_PROMPT,
         f"COURSE: {topic.course_title}",
         *([f"LEARNER'S GOAL: {goal}"] if goal else []),
+        *([section] if (section := format_about(about)) else []),
         f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
         f"CURRENT LESSON: {path}\n{topic.description}\n\n"
         + _cap(lesson, MAX_LESSON_CHARS_IN_CONTEXT),
@@ -430,6 +434,7 @@ def build_course_chat_messages(
     summary: str | None = None,
     course_files: str | None = None,
     learner_profile: str | None = None,
+    about: str | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course goal,
@@ -442,6 +447,7 @@ def build_course_chat_messages(
         COURSE_CHAT_SYSTEM_PROMPT,
         f"COURSE: {course.title}",
         f"LEARNER'S GOAL: {course.initial_prompt}",
+        *([section] if (section := format_about(about)) else []),
         f"PROGRESS: {completed} topics completed",
         f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
     ]
@@ -663,6 +669,7 @@ def send_topic_message(
 
     course = get_course(topic.course_id)
     outline = format_course_outline(course.topics, topic.id)
+    about = get_about()
     tasks = get_tasks(topic_id)
 
     def build(
@@ -684,6 +691,7 @@ def send_topic_message(
             summary=summary,
             course_files=format_course_files(topic.course_id),
             learner_profile=format_learner_profile(topic.course_id),
+            about=about,
         )
 
     conversation_id = get_or_create_conversation(topic.course_id, topic_id)
@@ -742,6 +750,7 @@ def send_course_message(
         return None
 
     outline = course_outline_for_chat(course.topics)
+    about = get_about()
 
     def build(
         history: list[ChatMessageOut], summary: str | None
@@ -757,6 +766,7 @@ def send_course_message(
             summary=summary,
             course_files=format_course_files(course_id),
             learner_profile=format_learner_profile(course_id),
+            about=about,
         )
 
     conversation_id = get_or_create_conversation(course_id)

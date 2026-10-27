@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Trash2,
+  UserRound,
+} from "lucide-react";
+import AboutMePanel from "./AboutMePanel";
 import Skeleton from "./Skeleton";
 import { isWiderThan } from "../utils/screen";
 
@@ -19,6 +26,7 @@ function Sidebar({
   disabled,
 }) {
   const [isOpen, setIsOpen] = useState(() => isWiderThan(768));
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   // On narrow screens the overlay would cover the page the user just picked.
   function closeOnNarrow() {
@@ -57,6 +65,17 @@ function Sidebar({
               className="p-2 rounded-md text-muted hover:text-ink hover:bg-line disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(true);
+                setIsAboutOpen(true);
+              }}
+              aria-label="About me"
+              className="p-2 rounded-md text-muted hover:text-ink hover:bg-line"
+            >
+              <UserRound size={18} />
             </button>
           </div>
         </aside>
@@ -156,6 +175,11 @@ function Sidebar({
               </div>
             ))}
           </nav>
+
+          <AboutMePanel
+            isOpen={isAboutOpen}
+            onToggle={() => setIsAboutOpen((prev) => !prev)}
+          />
         </div>
       </aside>
     </>

@@ -30,12 +30,13 @@ def fake_course(course_id: uuid.UUID) -> CourseOut:
 def test_course_without_files_streams_statuses_then_the_course(monkeypatch):
     course_id = uuid.uuid4()
 
-    def generate(prompt, on_status=None):
+    def generate(prompt, on_status=None, about=None):
         on_status("Planning the course map…")
         on_status("Checking the map…")
         return TopicMap(course_title="Stats", topics=[]), []
 
     monkeypatch.setattr(main, "generate_topic_map", generate)
+    monkeypatch.setattr(main, "get_about", lambda: "")
     monkeypatch.setattr(main, "save_course", lambda *args: course_id)
     monkeypatch.setattr(main, "get_course", fake_course)
 

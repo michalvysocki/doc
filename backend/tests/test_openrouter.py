@@ -656,3 +656,36 @@ def test_invalid_review_answer_raises(monkeypatch):
 
     with pytest.raises(openrouter.OpenRouterError, match="lesson_review"):
         openrouter.review_lesson("Topic", "Text", [])
+
+
+def test_format_about_is_empty_without_a_description():
+    assert openrouter.format_about("") is None
+    assert openrouter.format_about("ML engineer") == (
+        "ABOUT THE LEARNER (written by the learner):\nML engineer"
+    )
+
+
+def test_learner_description_reaches_map_lesson_and_tasks(monkeypatch):
+    sent = []
+
+    def capture(url, payload, timeout):
+        sent.append(payload["messages"][1]["content"])
+        name = payload.get("response_format", {}).get("json_schema", {}).get("name")
+        content = {
+            "topic_map": json.dumps({"course_title": "Rust", "topics": []}),
+            "task_set": json.dumps({"tasks": []}),
+        }.get(name, "Lesson")
+        return {"choices": [{"message": {"content": content}}]}
+
+    monkeypatch.setattr(openrouter, "WEB_SEARCH_ENABLED", False)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+
+    openrouter.generate_topic_map("Rust", about="ML engineer")
+    openrouter.generate_topic_explanation(
+        "Rust", [], "Borrowing", "d", [], about="ML engineer"
+    )
+    openrouter.generate_tasks("Rust", [], "Borrowing", "Lesson", about="ML engineer")
+    openrouter.generate_topic_map("Rust")
+
+    assert all("ABOUT THE LEARNER" in text for text in sent[:3])
+    assert "ABOUT THE LEARNER" not in sent[3]

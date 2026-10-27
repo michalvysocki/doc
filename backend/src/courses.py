@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .file_parsing import ParsedFile
+from .learner_settings import get_about
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import (
     OpenRouterError,
@@ -364,7 +365,7 @@ def create_course_with_files(
             course_id, initial_prompt, with_summaries=True
         )
         topic_map, web_sources = generate_topic_map(
-            initial_prompt, materials, on_status=on_status
+            initial_prompt, materials, on_status=on_status, about=get_about()
         )
 
         with SessionLocal() as session, session.begin():
@@ -377,6 +378,23 @@ def create_course_with_files(
         raise
 
     return course_id
+
+
+def update_course_goal(course_id: uuid.UUID, goal: str) -> CourseOut | None:
+    """
+    Changes the course goal (the prompt the course was created from), so that
+    new lessons, tasks and chat answers follow it.
+
+    Returns:
+        CourseOut | None: the course, or None if it does not exist
+    """
+
+    with SessionLocal() as session, session.begin():
+        course = session.get(Course, course_id)
+        if course is None:
+            return None
+        course.initial_prompt = goal
+    return get_course(course_id)
 
 
 def get_course(course_id: uuid.UUID) -> CourseOut | None:
@@ -615,6 +633,7 @@ def create_explanation(
         materials=materials,
         goal=course.initial_prompt if course else None,
         outline=format_course_outline(course.topics, topic.id) if course else None,
+        about=get_about(),
     )
 
     sources = merge_sources(web_sources, file_sources)

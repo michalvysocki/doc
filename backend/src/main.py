@@ -40,6 +40,7 @@ from .courses import (
     list_courses,
     save_course,
     topic_exists,
+    update_course_goal,
 )
 from .file_parsing import (
     FileParsingError,
@@ -47,6 +48,7 @@ from .file_parsing import (
     prepare_upload,
     read_upload,
 )
+from .learner_settings import get_about, set_about
 from .openrouter import OpenRouterError, StatusCallback, generate_topic_map
 from .regenerations import (
     cancel_regeneration,
@@ -59,9 +61,12 @@ from .schemas import (
     ChatMessageOut,
     CourseCreate,
     CourseFileOut,
+    CourseGoalUpdate,
     CourseOut,
     CourseRebuildOut,
     CourseSummary,
+    LearnerSettingsOut,
+    LearnerSettingsUpdate,
     MessageCreate,
     PendingRegenerationOut,
     ReviewTaskOut,
@@ -203,7 +208,7 @@ def create_course(
             )
         else:
             topic_map, sources = generate_topic_map(
-                request.initial_prompt, on_status=on_status
+                request.initial_prompt, on_status=on_status, about=get_about()
             )
             course_id = save_course(request.initial_prompt, topic_map, sources)
         return get_course(course_id)
@@ -225,6 +230,24 @@ def read_course_files(course_id: uuid.UUID):
         raise HTTPException(status_code=404, detail="Course not found")
 
     return list_course_files(course_id)
+
+
+@app.get("/learner-settings", response_model=LearnerSettingsOut)
+def read_learner_settings():
+    return LearnerSettingsOut(about=get_about())
+
+
+@app.put("/learner-settings", response_model=LearnerSettingsOut)
+def put_learner_settings(request: LearnerSettingsUpdate):
+    return LearnerSettingsOut(about=set_about(request.about))
+
+
+@app.patch("/courses/{course_id}", response_model=CourseOut)
+def patch_course(course_id: uuid.UUID, request: CourseGoalUpdate):
+    course = update_course_goal(course_id, request.initial_prompt)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return course
 
 
 @app.get("/courses/{course_id}", response_model=CourseOut)

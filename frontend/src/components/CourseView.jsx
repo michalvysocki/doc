@@ -1,11 +1,12 @@
 import { Link, useOutletContext } from "react-router";
 import { RotateCcw } from "lucide-react";
+import CourseGoal from "./CourseGoal";
 import CourseRebuildPreview from "./CourseRebuildPreview";
 import SourcesList from "./SourcesList";
 import TopicCard from "./TopicCard";
 
 function CourseView() {
-  const { course, courseRebuild } = useOutletContext();
+  const { course, courseRebuild, refreshCourse } = useOutletContext();
   const { topics_total, topics_completed } = course.progress;
   const percent =
     topics_total > 0 ? Math.round((topics_completed / topics_total) * 100) : 0;
@@ -13,6 +14,7 @@ function CourseView() {
   return (
     <div className="max-w-3xl mx-auto w-full">
       <h1 className="type-title text-ink">{course.title}</h1>
+      <CourseGoal course={course} onSaved={refreshCourse} />
 
       <div className="mt-3">
         <div className="h-2 rounded-full bg-line overflow-hidden">

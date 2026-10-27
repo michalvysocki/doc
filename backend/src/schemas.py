@@ -48,6 +48,20 @@ class TopicMap(BaseModel):
     topics: list[TopicNode] = Field(description="Top-level topics")
 
 
+class LearnerSettingsOut(BaseModel):
+    about: str
+
+
+class LearnerSettingsUpdate(BaseModel):
+    about: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
+
+
+class CourseGoalUpdate(BaseModel):
+    initial_prompt: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)
+    ]
+
+
 class CourseCreate(BaseModel):
     initial_prompt: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)

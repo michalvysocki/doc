@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .courses import due_condition, get_course, get_file_materials, get_topic
 from .database import SessionLocal
+from .learner_settings import get_about
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_tasks, grade_answer
 from .schemas import AttemptOut, GeneratedTask, ReviewTaskOut, TaskOut
@@ -141,6 +142,7 @@ def create_tasks(
         instructions=instructions,
         materials=materials,
         goal=course.initial_prompt if course else None,
+        about=get_about(),
     )
 
     with SessionLocal() as session, session.begin():

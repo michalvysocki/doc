@@ -222,3 +222,18 @@ class Chunk(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
+
+
+class LearnerSettings(Base):
+    """
+    Settings of the (single) learner: one row with id 1. With users and login,
+    this moves to the users table.
+    """
+
+    __tablename__ = "learner_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    about: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

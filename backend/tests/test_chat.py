@@ -632,3 +632,23 @@ def test_long_course_chat_outline_drops_descriptions_but_keeps_every_topic(
     assert outline.startswith("(Topic descriptions are left out")
     assert "description" not in outline.split("\n", 1)[1]
     assert all(f"- Topic {n} (id: " in outline for n in range(6))
+
+
+def test_chats_add_the_learner_description_after_the_goal():
+    topic_messages = build_topic_chat_messages(
+        make_topic_detail(), "", [], [], [], goal="Publish a crate", about="ML engineer"
+    )
+    course = make_course([])
+    course_messages = build_course_chat_messages(
+        course, "", [], [], about="ML engineer"
+    )
+
+    for messages in (topic_messages, course_messages):
+        system = messages[0]["content"]
+        assert system.index("LEARNER'S GOAL") < system.index("ABOUT THE LEARNER")
+
+
+def test_chats_skip_an_empty_learner_description():
+    messages = build_topic_chat_messages(make_topic_detail(), "", [], [], [], about="")
+
+    assert "ABOUT THE LEARNER" not in messages[0]["content"]
