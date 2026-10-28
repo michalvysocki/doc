@@ -749,3 +749,39 @@ def test_follow_up_task_targets_the_feedback_without_the_grading_notes(monkeypat
     assert "GRADING NOTES" not in user
     assert sent["response_format"]["json_schema"]["name"] == "follow_up_task"
     assert task.question == "Why does s1 move?"
+
+
+def test_follow_up_task_gets_the_topics_the_lesson_builds_on(monkeypatch):
+    sent = []
+
+    def capture(url, payload, timeout):
+        sent.append(payload["messages"][1]["content"])
+        task = {"question": "Q", "grading_notes": "N"}
+        return {"choices": [{"message": {"content": json.dumps(task)}}]}
+
+    monkeypatch.setattr(openrouter, "REVIEW_ENABLED", False)
+    monkeypatch.setattr(openrouter, "_post_to_openrouter", capture)
+    args = ("Rust", [], "Lifetimes", "Lesson text")
+    answer = {
+        "question": "Explain lifetimes.",
+        "answer": "No idea.",
+        "verdict": "incorrect",
+        "feedback": "Missing: borrowing.",
+    }
+
+    openrouter.generate_follow_up_task(*args, **answer, requires=["References"])
+    openrouter.generate_follow_up_task(*args, **answer)
+
+    builds_on = sent[0].index("Builds on (earlier topics): References")
+    assert builds_on < sent[0].index("LESSON:")
+    assert "Builds on" not in sent[1]
+    assert "earlier topic" in openrouter.FOLLOW_UP_TASK_SYSTEM_PROMPT
+    assert "earlier topic" in openrouter.FOLLOW_UP_REVIEW_PROMPT
+
+
+def test_strict_schema_requires_fields_with_defaults_too():
+    schema = openrouter._strict_schema(TopicMap.model_json_schema())
+
+    node = schema["$defs"]["TopicNode"]
+    assert set(node["required"]) == {"title", "description", "requires", "children"}
+    assert set(schema["required"]) == {"course_title", "topics"}

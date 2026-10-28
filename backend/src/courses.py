@@ -16,13 +16,19 @@ from .openrouter import (
     OpenRouterError,
     StatusCallback,
     generate_topic_explanation,
+    generate_topic_links,
     generate_topic_map,
 )
-from .outline import format_course_outline
+from .outline import (
+    format_course_outline,
+    format_outline_with_progress,
+    required_titles,
+)
 from .schemas import (
     CourseOut,
     CourseProgress,
     CourseSummary,
+    LinkPlan,
     Source,
     TopicDetail,
     TopicLink,
@@ -30,6 +36,7 @@ from .schemas import (
     TopicNode,
     TopicOut,
 )
+from .topic_links import Placed, links_by_topic, replace_course_links, resolve_links
 from .vectorstore import (
     add_document,
     format_course_files,
@@ -76,7 +83,9 @@ def due_condition(now: datetime):
     return and_(Task.archived_at.is_(None), Task.review_due_at <= now)
 
 
-def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
+def _build_tree(
+    rows: Sequence[Any], requires: dict[uuid.UUID, list[uuid.UUID]] | None = None
+) -> list[TopicOut]:
     """
     Builds a nested topic tree from flat topic rows.
 
@@ -93,6 +102,7 @@ def _build_tree(rows: Sequence[Any]) -> list[TopicOut]:
             tasks_total=row.tasks_total,
             tasks_solved=row.tasks_solved,
             reviews_due=row.reviews_due,
+            requires=(requires or {}).get(row.id, []),
             children=[],
         )
         for row in rows
@@ -320,7 +330,28 @@ def _add_topic_map(
     course.title = topic_map.course_title
     course.sources = sources or None
     session.flush()
-    session.add_all(_flatten_topics(topic_map.topics, course.id))
+    topics = _flatten_topics(topic_map.topics, course.id)
+    session.add_all(topics)
+    session.flush()  # links point to the new topics
+    replace_course_links(
+        session, course.id, resolve_links(_placed(topic_map.topics, topics))
+    )
+
+
+def _placed(nodes: list[TopicNode], topics: list[Topic]) -> list[Placed]:
+    """Pairs map nodes with the topics made from them (both in outline order)."""
+
+    rows = iter(topics)
+    placed: list[Placed] = []
+
+    def walk(nodes: list[TopicNode], ancestors: tuple[uuid.UUID, ...]) -> None:
+        for node in nodes:
+            topic = next(rows)
+            placed.append((node.title, topic.id, node.requires, ancestors))
+            walk(node.children, (*ancestors, topic.id))
+
+    walk(nodes, ())
+    return placed
 
 
 def create_course_with_files(
@@ -446,7 +477,7 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
             .order_by(Topic.position)
         ).all()
 
-        tree = _build_tree(topics)
+        tree = _build_tree(topics, links_by_topic(session, course_id))
 
         return CourseOut(
             id=course.id,
@@ -636,6 +667,7 @@ def create_explanation(
         outline=format_course_outline(course.topics, topic.id) if course else None,
         about=get_about(),
         learner_profile=format_learner_profile(topic.course_id),
+        requires=required_titles(course.topics, topic.id) if course else None,
     )
 
     sources = merge_sources(web_sources, file_sources)
@@ -721,3 +753,60 @@ def course_exists(course_id: uuid.UUID) -> bool:
 def topic_exists(topic_id: uuid.UUID) -> bool:
     with SessionLocal() as session:
         return session.get(Topic, topic_id) is not None
+
+
+def _placed_from_plan(topics: list[TopicOut], plan: LinkPlan) -> list[Placed]:
+    """
+    The course topics in outline order with the prerequisites the model found,
+    turned from ids into titles; unknown ids are skipped.
+    """
+
+    order: list[tuple[TopicOut, tuple[uuid.UUID, ...]]] = []
+
+    def walk(nodes: list[TopicOut], ancestors: tuple[uuid.UUID, ...]) -> None:
+        for topic in nodes:
+            order.append((topic, ancestors))
+            walk(topic.children, (*ancestors, topic.id))
+
+    walk(topics, ())
+    titles = {str(topic.id): topic.title for topic, _ in order}
+    requires: dict[str, list[str]] = {}
+    for item in plan.topics:
+        for required in item.requires:
+            if required in titles:
+                requires.setdefault(item.topic_id, []).append(titles[required])
+            else:
+                logger.warning("Skipped link to unknown topic id %s", required)
+    return [
+        (topic.title, topic.id, requires.get(str(topic.id), []), ancestors)
+        for topic, ancestors in order
+    ]
+
+
+def infer_course_links(course_id: uuid.UUID) -> int | None:
+    """
+    Finds prerequisite links for an existing course with the planning model and
+    replaces the course's links with the ones that pass the checks.
+
+    Returns:
+        int | None: number of saved links, or None if the course does not exist
+
+    Raises:
+        OpenRouterError: if the model request fails
+    """
+
+    course = get_course(course_id)
+    if course is None:
+        return None
+
+    plan = generate_topic_links(
+        course.title,
+        course.initial_prompt,
+        format_outline_with_progress(
+            course.topics, include_ids=True, include_descriptions=True
+        ),
+    )
+    pairs = resolve_links(_placed_from_plan(course.topics, plan))
+    with SessionLocal() as session, session.begin():
+        replace_course_links(session, course_id, pairs)
+    return len(pairs)

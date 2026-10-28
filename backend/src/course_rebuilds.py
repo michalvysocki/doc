@@ -24,6 +24,7 @@ from .schemas import (
     TopicNode,
     TopicOut,
 )
+from .topic_links import Placed, replace_course_links, resolve_links
 
 MAX_DEPTH = 3
 
@@ -121,7 +122,10 @@ def propose_course_rebuild(
         course_title=course.title,
         initial_prompt=course.initial_prompt,
         outline=format_outline_with_progress(
-            course.topics, include_ids=True, include_descriptions=True
+            course.topics,
+            include_ids=True,
+            include_descriptions=True,
+            include_requires=True,
         ),
         instructions=instructions,
         materials=materials,
@@ -155,15 +159,22 @@ def _save_rebuild(
         return rebuild.id
 
 
-def _plan_from_course(topics: list[TopicOut]) -> list[RebuildTopicNode]:
-    """The current topic tree as a plan that keeps every topic."""
+def _plan_from_course(
+    topics: list[TopicOut], titles: dict[uuid.UUID, str] | None = None
+) -> list[RebuildTopicNode]:
+    """The current topic tree as a plan that keeps every topic and its links."""
 
+    if titles is None:
+        titles = {topic_id: topic.title for topic_id, topic in _flatten(topics).items()}
     return [
         RebuildTopicNode(
             existing_topic_id=str(topic.id),
             title=topic.title,
             description=topic.description,
-            children=_plan_from_course(topic.children),
+            requires=[
+                titles[topic_id] for topic_id in topic.requires if topic_id in titles
+            ],
+            children=_plan_from_course(topic.children, titles),
         )
         for topic in topics
     ]
@@ -175,6 +186,7 @@ def _plan_from_new(nodes: list[TopicNode]) -> list[RebuildTopicNode]:
             existing_topic_id=None,
             title=node.title,
             description=node.description,
+            requires=node.requires,
             children=_plan_from_new(node.children),
         )
         for node in nodes
@@ -405,9 +417,12 @@ def _apply_nodes(
     nodes: list[RebuildTopicNode],
     parent_id: uuid.UUID | None,
     topics: dict[uuid.UUID, Topic],
+    placed: list[Placed],
+    ancestors: tuple[uuid.UUID, ...] = (),
 ) -> int:
     """
-    Places kept topics and creates new ones following the plan, level by level.
+    Places kept topics and creates new ones following the plan, level by level,
+    and records every placed topic in `placed` (in outline order) for links.
 
     Returns:
         int: number of created topics
@@ -442,7 +457,16 @@ def _apply_nodes(
             # parent_id at once, so the new row must exist before their update.
             session.flush()
             added += 1
-        added += _apply_nodes(session, course_id, node.children, topic.id, topics)
+        placed.append((title, topic.id, node.requires, ancestors))
+        added += _apply_nodes(
+            session,
+            course_id,
+            node.children,
+            topic.id,
+            topics,
+            placed,
+            (*ancestors, topic.id),
+        )
     return added
 
 
@@ -473,12 +497,14 @@ def apply_course_rebuild(rebuild_id: uuid.UUID) -> RebuildResult | None:
         nodes = sanitize_plan(plan.topics, {str(topic_id) for topic_id in topics})
         kept = {uuid.UUID(topic_id) for topic_id in _kept_ids(nodes)}
 
-        added = _apply_nodes(session, course_id, nodes, None, topics)
+        placed: list[Placed] = []
+        added = _apply_nodes(session, course_id, nodes, None, topics, placed)
         session.flush()
 
         deleted = [topic_id for topic_id in topics if topic_id not in kept]
         if deleted:
             session.execute(delete(Topic).where(Topic.id.in_(deleted)))
+        replace_course_links(session, course_id, resolve_links(placed))
         course = session.get(Course, course_id)
         course.sources = (
             merge_sources(course.sources, _plan_sources(rebuild.plan)) or None

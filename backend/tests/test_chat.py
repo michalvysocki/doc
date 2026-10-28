@@ -102,6 +102,18 @@ def test_system_prompt_contains_course_outline_and_lesson():
     assert "Lesson text" in system["content"]
 
 
+def test_lesson_chat_gets_the_topics_the_lesson_builds_on():
+    with_requires = build_topic_chat_messages(
+        make_topic_detail(), "", [], [], [], requires=["Ownership"]
+    )[0]["content"]
+    without = build_topic_chat_messages(make_topic_detail(), "", [], [], [])
+
+    builds_on = with_requires.index("Builds on (earlier topics): Ownership")
+    assert with_requires.index("CURRENT LESSON") < builds_on
+    assert builds_on < with_requires.index("Lesson text")
+    assert "Builds on" not in without[0]["content"]
+
+
 def test_missing_lesson_is_explained_to_the_model():
     messages = build_topic_chat_messages(make_topic_detail(None), "", [], [], [])
 

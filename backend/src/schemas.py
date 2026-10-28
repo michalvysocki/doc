@@ -12,6 +12,13 @@ class TopicNode(BaseModel):
     description: str = Field(
         description="One or two sentences about what the topic covers"
     )
+    requires: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Titles of earlier topics of this map the learner must know first; "
+            "only direct prerequisites, usually 0-3; empty if none"
+        ),
+    )
     children: list["TopicNode"] = Field(
         description="Subtopics; empty list for leaf topics"
     )
@@ -30,6 +37,13 @@ class RebuildTopicNode(BaseModel):
     description: str = Field(
         description="One or two sentences about what the topic covers"
     )
+    requires: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Titles of earlier topics of this map the learner must know first; "
+            "only direct prerequisites, usually 0-3; empty if none"
+        ),
+    )
     children: list["RebuildTopicNode"] = Field(
         description="Subtopics; empty list for leaf topics"
     )
@@ -39,6 +53,23 @@ class RebuildPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     topics: list[RebuildTopicNode] = Field(description="Top-level topics in order")
+
+
+class TopicPrerequisites(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(description="Id of a topic from the outline")
+    requires: list[str] = Field(
+        description="Ids of earlier topics the learner must know first"
+    )
+
+
+class LinkPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topics: list[TopicPrerequisites] = Field(
+        description="Only the topics that have prerequisites"
+    )
 
 
 class TopicMap(BaseModel):
@@ -76,6 +107,7 @@ class TopicOut(BaseModel):
     tasks_total: int
     tasks_solved: int
     reviews_due: int = 0
+    requires: list[uuid.UUID] = []  # ids of topics this one requires
     children: list["TopicOut"]
 
 

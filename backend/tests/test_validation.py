@@ -183,3 +183,46 @@ def test_follow_up_that_rewords_the_original_is_reported():
     )
     assert check_follow_up(copy, original) == [repeated]
     assert check_follow_up(focused, original) == []
+
+
+def linked(title: str, *children: TopicNode, requires: list[str] | None = None):
+    return TopicNode(
+        title=title,
+        description="About it",
+        requires=requires or [],
+        children=list(children),
+    )
+
+
+def test_prerequisites_of_earlier_topics_are_fine():
+    topic_map = TopicMap(
+        course_title="Rust",
+        topics=[
+            linked("Basics", linked("Ownership"), linked("References")),
+            linked(
+                "Advanced", linked("Lifetimes", requires=["references", "Ownership"])
+            ),
+        ],
+    )
+
+    assert check_topic_map(topic_map) == []
+
+
+def test_wrong_prerequisites_are_reported():
+    topic_map = TopicMap(
+        course_title="Rust",
+        topics=[
+            linked(
+                "Basics",
+                linked("Ownership", requires=["Lifetimes", "Basics"]),
+                linked("References", requires=["Macros"]),
+            ),
+            linked("Lifetimes"),
+        ],
+    )
+
+    assert check_topic_map(topic_map) == [
+        '"Ownership" requires "Lifetimes", which comes later.',
+        '"Ownership" requires itself or its own module.',
+        '"References" requires "Macros", which is not in the map.',
+    ]

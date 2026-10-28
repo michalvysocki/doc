@@ -12,6 +12,7 @@ from .learner_profile import format_learner_profile
 from .learner_settings import get_about
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_follow_up_task, generate_tasks, grade_answer
+from .outline import required_titles
 from .schemas import AttemptOut, GeneratedTask, ReviewTaskOut, TaskOut
 
 REVIEW_LADDER_DAYS = [1, 3, 7, 14, 30]
@@ -165,6 +166,7 @@ def create_follow_up(attempt_id: int) -> TaskOut | None:
     if topic is None or topic.explanation is None:
         raise LessonMissingError()
 
+    course = get_course(topic.course_id)
     generated = generate_follow_up_task(
         course_title=topic.course_title,
         path=[link.title for link in topic.path],
@@ -175,6 +177,7 @@ def create_follow_up(attempt_id: int) -> TaskOut | None:
         verdict=verdict,
         feedback=feedback,
         about=get_about(),
+        requires=required_titles(course.topics, topic_id) if course else None,
     )
 
     try:

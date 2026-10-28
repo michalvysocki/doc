@@ -4,6 +4,7 @@ from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -240,4 +241,29 @@ class LearnerSettings(Base):
     about: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TopicLink(Base):
+    """
+    A prerequisite across the topic tree: from_topic requires to_topic, so the
+    learner should know to_topic before from_topic.
+    """
+
+    __tablename__ = "topic_links"
+    __table_args__ = (
+        UniqueConstraint("from_topic_id", "to_topic_id"),
+        CheckConstraint("from_topic_id <> to_topic_id", name="not_self"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    from_topic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"), index=True
+    )
+    to_topic_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("topics.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), server_default="requires")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

@@ -14,6 +14,7 @@ from .schemas import (
     GeneratedTask,
     GeneratedTaskSet,
     LessonReview,
+    LinkPlan,
     RebuildPlan,
     RebuildPlanReview,
     TaskGrade,
@@ -116,6 +117,9 @@ TOPIC_MAP_SYSTEM_PROMPT = (
     "(top-level topics with subtopics). Split a subtopic into its own subtopics "
     "only when it is too big for one study session, so the depth follows the "
     "content, up to 3 levels. "
+    "For each topic, list in requires the titles of earlier topics the learner "
+    "must know first: only direct, real prerequisites (usually 0-3), never later "
+    "topics and not its own module. "
     "Do not put links or citations in titles and descriptions; sources are "
     "collected separately. "
     "Do not number the topic "
@@ -137,6 +141,9 @@ REBUILD_SYSTEM_PROMPT = (
     "(top-level topics with subtopics). Split a subtopic into its own subtopics "
     "only when it is too big for one study session, so the depth follows the "
     "content, up to 3 levels. "
+    "For each topic, list in requires the titles of earlier topics the learner "
+    "must know first: only direct, real prerequisites (usually 0-3), never later "
+    "topics and not its own module. "
     "Do not put links or citations in titles and descriptions; sources are "
     "collected separately. "
     "For "
@@ -169,9 +176,11 @@ TOPIC_EXPLANATION_SYSTEM_PROMPT = (
     "learner's goal is given, choose examples that fit it. "
     "If the learner wrote about themselves, adapt the level, pace and examples to "
     "their background; do not repeat what they say they already know. "
+    "If the topic lists earlier topics it builds on, assume the learner knows "
+    "them: do not explain them again, refer to them by name where it helps. "
     "If the learner profile from practice tasks is given and this lesson builds on "
-    "topics the learner struggles with, start with a short recap of the parts it "
-    "needs from them. "
+    "topics the learner struggles with (the listed earlier topics or others it "
+    "clearly needs), start with a short recap of the parts it needs from them. "
     "You can search the web "
     "when the topic needs current information, such as recent versions or "
     "changes; do not search for well-established basics. Do not write a list of "
@@ -209,6 +218,9 @@ TOPIC_CHAT_SYSTEM_PROMPT = (
     "cover. Do not write your own list of sources; it is added automatically. "
     "If the learner profile shows they struggled with this or a related topic, "
     "take it into account when explaining. "
+    "If a question or a mistake comes from an earlier topic this lesson builds "
+    "on, explain the needed part briefly and name that topic so the learner can "
+    "go back to it. "
     "If the learner wrote about themselves, adapt the level, pace and examples to "
     "their background; do not repeat what they say they already know. "
     "Answer in the language of the learner's last message and use Markdown. "
@@ -303,7 +315,8 @@ MAP_REVIEW_PROMPT = REVIEW_RULES + (
     "topics are ordered so that each builds on earlier ones; no topics are "
     "duplicated or overlap; every topic fits one study session; courses with more "
     "than about 10 topics are grouped into modules; at most 3 levels; titles are "
-    "not numbered; each description says what the topic covers."
+    "not numbered; each description says what the topic covers; requires lists "
+    "only real, direct prerequisites that come earlier, with no cycles."
 )
 
 REBUILD_REVIEW_PROMPT = MAP_REVIEW_PROMPT + (
@@ -334,8 +347,10 @@ FOLLOW_UP_TASK_SYSTEM_PROMPT = (
     "You create one follow-up practice task for a learner whose answer to a task "
     "was not fully correct. Target exactly what was missing or wrong according to "
     "the feedback. Make it a smaller, more focused step than the original task, "
-    "answerable from the lesson; do not repeat the original question. If a gap is "
-    "outside the lesson, target the other gaps. Write "
+    "answerable from the lesson or the earlier topics it builds on; do not repeat "
+    "the original question. If a gap comes from an earlier topic this lesson "
+    "builds on, you may target it; then name that topic at the start of the "
+    "question. If a gap is outside both, target the other gaps. Write "
     "grading notes listing the key points a correct answer must contain; the "
     "learner never sees them. Write in the language of the lesson. " + MATH_FORMAT
 )
@@ -345,8 +360,19 @@ FOLLOW_UP_REVIEW_PROMPT = REVIEW_RULES + (
     "Criteria for a follow-up task: it targets the gaps named in the feedback and "
     "is a smaller, more focused step than the original task; it does not repeat "
     "the original question or ask for its whole answer again; it can be answered "
-    "from the lesson (if a gap is outside the lesson, target the other gaps); the "
+    "from the lesson or from an earlier topic the lesson builds on, and then "
+    "names that topic (if a gap is outside both, target the other gaps); the "
     "grading notes are correct and list the key points of a correct answer."
+)
+
+
+LINKS_SYSTEM_PROMPT = (
+    "You find prerequisites between the topics of an existing course. For each "
+    "topic, list the ids of earlier topics the learner must know first: only "
+    "direct, real prerequisites (usually 0-3), never later topics and not its own "
+    "module. Do not list a topic only because it comes just before in the same "
+    "module; the order already shows that. Return only topics that have "
+    "prerequisites."
 )
 
 
@@ -734,6 +760,23 @@ def get_embeddings(texts: list[str]) -> list[list[float]]:
     return embeddings
 
 
+def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Marks every property as required, as strict structured output demands."""
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            if "properties" in node:
+                node["required"] = list(node["properties"])
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(schema)
+    return schema
+
+
 def _structured_query_with_sources[T: BaseModel](
     messages: list[dict[str, Any]],
     schema: type[T],
@@ -763,7 +806,7 @@ def _structured_query_with_sources[T: BaseModel](
             "json_schema": {
                 "name": name,
                 "strict": True,
-                "schema": schema.model_json_schema(),
+                "schema": _strict_schema(schema.model_json_schema()),
             },
         },
     }
@@ -1016,6 +1059,7 @@ def generate_topic_explanation(
     outline: str | None = None,
     about: str | None = None,
     learner_profile: str | None = None,
+    requires: list[str] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     context_lines = [
         f"Course: {course_title}",
@@ -1023,6 +1067,7 @@ def generate_topic_explanation(
         f"Topic path: {' > '.join([*path, title])}",
         f"Topic: {title}",
         f"Topic description: {description}",
+        *([f"Builds on (earlier topics): {', '.join(requires)}"] if requires else []),
     ]
     if section := format_about(about):
         context_lines.append(f"\n{section}")
@@ -1134,6 +1179,7 @@ def generate_follow_up_task(
     verdict: str,
     feedback: str,
     about: str | None = None,
+    requires: list[str] | None = None,
 ) -> GeneratedTask:
     """
     Generates one task that targets what an answer missed. The grading notes of
@@ -1142,7 +1188,9 @@ def generate_follow_up_task(
     """
 
     context = _with_about(
-        f"Course: {course_title}\nTopic path: {' > '.join([*path, title])}", about
+        f"Course: {course_title}\nTopic path: {' > '.join([*path, title])}"
+        + (f"\nBuilds on (earlier topics): {', '.join(requires)}" if requires else ""),
+        about,
     ) + (
         f"\n\nLESSON:\n{lesson}\n\nORIGINAL TASK:\n{question}\n\n"
         f"LEARNER'S ANSWER:\n{answer}\n\nGRADE: {verdict}\nFEEDBACK:\n{feedback}"
@@ -1167,6 +1215,24 @@ def generate_follow_up_task(
         lambda result: result.revised,
     )
     return reviewed.tasks[0] if reviewed.tasks else task
+
+
+def generate_topic_links(course_title: str, goal: str, outline: str) -> LinkPlan:
+    return _structured_query(
+        [
+            {"role": "system", "content": LINKS_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Course: {course_title}\nCourse goal: {goal}\n\n"
+                f"OUTLINE:\n{outline}",
+            },
+        ],
+        LinkPlan,
+        name="topic_links",
+        timeout=300,
+        model=PLANNING_MODEL,
+        reasoning_effort=PLANNING_REASONING_EFFORT,
+    )
 
 
 def generate_rebuild_plan(

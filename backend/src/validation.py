@@ -35,11 +35,45 @@ def _check_nodes(
         _check_nodes(node.children, issues, titles, depth + 1)
 
 
+def _outline_order(nodes, ancestors: tuple[str, ...] = ()) -> list:
+    """Topics in outline order, each with the titles of its modules (casefolded)."""
+
+    order = []
+    for node in nodes:
+        order.append((node, ancestors))
+        order.extend(_outline_order(node.children, (*ancestors, node.title.casefold())))
+    return order
+
+
+def _check_requires(nodes, issues: list[str]) -> None:
+    """Prerequisites must be earlier topics of the map, so there are no cycles."""
+
+    order = _outline_order(nodes)
+    position: dict[str, int] = {}
+    for index, (node, _) in enumerate(order):
+        position.setdefault(node.title.casefold(), index)
+
+    for index, (node, ancestors) in enumerate(order):
+        for required in node.requires:
+            key = required.casefold()
+            if key not in position:
+                issues.append(
+                    f'"{node.title}" requires "{required}", which is not in the map.'
+                )
+            elif key == node.title.casefold() or key in ancestors:
+                issues.append(f'"{node.title}" requires itself or its own module.')
+            elif position[key] > index:
+                issues.append(
+                    f'"{node.title}" requires "{required}", which comes later.'
+                )
+
+
 def check_topic_map(topic_map: TopicMap) -> list[str]:
     issues: list[str] = []
     if not topic_map.topics:
         issues.append("The map has no topics.")
     _check_nodes(topic_map.topics, issues, {})
+    _check_requires(topic_map.topics, issues)
     return issues
 
 
@@ -57,6 +91,7 @@ def check_rebuild_plan(plan: RebuildPlan, existing_ids: set[str]) -> list[str]:
     if not plan.topics:
         issues.append("The plan has no topics.")
     _check_nodes(plan.topics, issues, {})
+    _check_requires(plan.topics, issues)
 
     used: set[str] = set()
 

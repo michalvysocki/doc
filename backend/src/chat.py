@@ -25,7 +25,11 @@ from .openrouter import (
     stream_query_with_tools,
     summarize_conversation,
 )
-from .outline import format_course_outline, format_outline_with_progress
+from .outline import (
+    format_course_outline,
+    format_outline_with_progress,
+    required_titles,
+)
 from .schemas import (
     AttachmentOut,
     ChatMessageOut,
@@ -387,6 +391,7 @@ def build_topic_chat_messages(
     course_files: str | None = None,
     learner_profile: str | None = None,
     about: str | None = None,
+    requires: list[str] | None = None,
 ) -> list[dict]:
     """
     Builds the messages for the model: a system prompt with the course and lesson
@@ -397,6 +402,9 @@ def build_topic_chat_messages(
     lesson = topic.explanation or "(The lesson has not been generated yet.)"
     level = len(topic.path) + 1
     subtopics = "\n".join(f"- {link.title} (id: {link.id})" for link in topic.subtopics)
+    builds_on = (
+        f"\nBuilds on (earlier topics): {', '.join(requires)}" if requires else ""
+    )
 
     sections = [
         TOPIC_CHAT_SYSTEM_PROMPT,
@@ -404,7 +412,7 @@ def build_topic_chat_messages(
         *([f"LEARNER'S GOAL: {goal}"] if goal else []),
         *([section] if (section := format_about(about)) else []),
         f"COURSE OUTLINE:\n{_cap(outline, MAX_OUTLINE_CHARS_IN_CONTEXT)}",
-        f"CURRENT LESSON: {path}\n{topic.description}\n\n"
+        f"CURRENT LESSON: {path}\n{topic.description}{builds_on}\n\n"
         + _cap(lesson, MAX_LESSON_CHARS_IN_CONTEXT),
         f"SUBTOPICS OF THIS LESSON (lesson level {level} of max 3):\n"
         + (subtopics or "(none)"),
@@ -669,6 +677,7 @@ def send_topic_message(
 
     course = get_course(topic.course_id)
     outline = format_course_outline(course.topics, topic.id)
+    requires = required_titles(course.topics, topic_id)
     about = get_about()
     tasks = get_tasks(topic_id)
 
@@ -691,6 +700,7 @@ def send_topic_message(
             summary=summary,
             course_files=format_course_files(topic.course_id),
             learner_profile=format_learner_profile(topic.course_id),
+            requires=requires,
             about=about,
         )
 
@@ -715,14 +725,14 @@ def course_outline_for_chat(topics: list[TopicOut]) -> str:
     """
 
     outline = format_outline_with_progress(
-        topics, include_ids=True, include_descriptions=True
+        topics, include_ids=True, include_descriptions=True, include_requires=True
     )
     if len(outline) <= MAX_OUTLINE_CHARS_IN_CONTEXT:
         return outline
     return (
         "(Topic descriptions are left out because the course is long; the list "
         "of topics is complete.)\n"
-        + format_outline_with_progress(topics, include_ids=True)
+        + format_outline_with_progress(topics, include_ids=True, include_requires=True)
     )
 
 
