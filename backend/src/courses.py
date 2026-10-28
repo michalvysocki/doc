@@ -35,6 +35,7 @@ from .schemas import (
     TopicMap,
     TopicNode,
     TopicOut,
+    TopicPrerequisites,
 )
 from .topic_links import Placed, links_by_topic, replace_course_links, resolve_links
 from .vectorstore import (
@@ -233,13 +234,14 @@ def move_topic(
     topic_id: uuid.UUID,
     parent_id: uuid.UUID | None,
     after_topic_id: uuid.UUID | Literal["first"] | None,
-) -> str:
+) -> tuple[str, list[str]]:
     """
     Moves a topic with its whole subtree under a new parent, after the given
     sibling ("first" for the start, None for the end).
 
     Returns:
-        str: the title of the moved topic
+        tuple[str, list[str]]: the title of the moved topic and the
+            prerequisite links removed because they no longer fit the order
 
     Raises:
         TopicPlacementError: if the topic, the parent or the sibling is not
@@ -266,7 +268,7 @@ def move_topic(
         topic.parent_id = parent_id
         title = topic.title
 
-    return title
+    return title, drop_broken_links(course_id)
 
 
 def rename_topic(
@@ -786,6 +788,131 @@ def _placed_from_plan(topics: list[TopicOut], plan: LinkPlan) -> list[Placed]:
         (topic.title, topic.id, requires.get(str(topic.id), []), ancestors)
         for topic, ancestors in order
     ]
+
+
+def _plan_with_requires(
+    topics: list[TopicOut], topic_id: uuid.UUID | None, required_ids: list[str]
+) -> LinkPlan:
+    """
+    The current links of a course, with new prerequisites for one topic
+    (unchanged links if topic_id is None).
+    """
+
+    items: list[TopicPrerequisites] = []
+
+    def walk(nodes: list[TopicOut]) -> None:
+        for topic in nodes:
+            requires = (
+                required_ids
+                if topic.id == topic_id
+                else [str(required) for required in topic.requires]
+            )
+            if requires:
+                items.append(
+                    TopicPrerequisites(topic_id=str(topic.id), requires=requires)
+                )
+            walk(topic.children)
+
+    walk(topics)
+    return LinkPlan(topics=items)
+
+
+def set_topic_requires(
+    course_id: uuid.UUID, topic_id: uuid.UUID, required_ids: list[str]
+) -> tuple[str, list[str], list[str], list[tuple[str, str]]] | None:
+    """
+    Replaces the prerequisites of one topic. All links of the course go through
+    resolve_links again, so the rules are the same as for planned links.
+
+    Returns:
+        tuple | None: the topic title, titles of the saved prerequisites, of the
+            removed earlier ones and (title, reason) of the skipped ones, or None
+            if the topic is not in this course
+    """
+
+    course = get_course(course_id)
+    if course is None:
+        return None
+    removed_ids = _requires_by_topic(course.topics).get(topic_id, [])
+    placed = _placed_from_plan(
+        course.topics, _plan_with_requires(course.topics, topic_id, required_ids)
+    )
+    titles = {str(placed_id): title for title, placed_id, _, _ in placed}
+    if str(topic_id) not in titles:
+        return None
+
+    pairs = resolve_links(placed)
+    kept = [titles[str(to_id)] for from_id, to_id in pairs if from_id == topic_id]
+    removed = [
+        titles[str(old)]
+        for old in removed_ids
+        if str(old) in titles and titles[str(old)] not in kept
+    ]
+    skipped = [
+        (titles.get(required, required), _skip_reason(placed, topic_id, required))
+        for required in required_ids
+        if titles.get(required) not in kept
+    ]
+    with SessionLocal() as session, session.begin():
+        replace_course_links(session, course_id, pairs)
+    return titles[str(topic_id)], kept, removed, skipped
+
+
+def _skip_reason(placed: list[Placed], topic_id: uuid.UUID, required: str) -> str:
+    """Says which link rule a skipped prerequisite of topic_id broke."""
+
+    index = {str(placed_id): i for i, (_, placed_id, _, _) in enumerate(placed)}
+    if required not in index:
+        return "not a topic of this course"
+    position = index[str(topic_id)]
+    required_id = placed[index[required]][1]
+    if required_id == topic_id:
+        return "the topic itself"
+    if required_id in placed[position][3]:
+        return "a module that contains this topic"
+    if index[required] > position:
+        return "comes later in the outline, so it must be moved earlier first"
+    return "comes right before it in the same module, so the order already says it"
+
+
+def _requires_by_topic(topics: list[TopicOut]) -> dict[uuid.UUID, list[uuid.UUID]]:
+    requires = {}
+    for topic in topics:
+        requires[topic.id] = topic.requires
+        requires.update(_requires_by_topic(topic.children))
+    return requires
+
+
+def drop_broken_links(course_id: uuid.UUID) -> list[str]:
+    """
+    Checks all links of a course again after its order changed and removes the
+    ones that no longer follow the rules, e.g. a prerequisite moved after the
+    topic.
+
+    Returns:
+        list[str]: the removed links as "topic ← prerequisite"
+    """
+
+    course = get_course(course_id)
+    if course is None:
+        return []
+    placed = _placed_from_plan(
+        course.topics, _plan_with_requires(course.topics, None, [])
+    )
+    titles = {placed_id: title for title, placed_id, _, _ in placed}
+    current = {
+        (placed_id, required_id)
+        for placed_id, required_ids in _requires_by_topic(course.topics).items()
+        for required_id in required_ids
+    }
+    pairs = resolve_links(placed)
+    dropped = current - set(pairs)
+    if not dropped:
+        return []
+
+    with SessionLocal() as session, session.begin():
+        replace_course_links(session, course_id, pairs)
+    return [f"{titles[from_id]} ← {titles[to_id]}" for from_id, to_id in dropped]
 
 
 def infer_course_links(course_id: uuid.UUID) -> int | None:

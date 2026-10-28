@@ -8,7 +8,14 @@ from .course_rebuilds import (
     propose_added_topics,
     propose_course_rebuild,
 )
-from .courses import FIRST, TopicPlacementError, add_topics, move_topic, rename_topic
+from .courses import (
+    FIRST,
+    TopicPlacementError,
+    add_topics,
+    move_topic,
+    rename_topic,
+    set_topic_requires,
+)
 from .openrouter import OpenRouterError
 from .regenerations import propose_regeneration
 from .schemas import (
@@ -21,6 +28,7 @@ from .schemas import (
     ProposeTopicDeletionArgs,
     RegenerationArgs,
     RenameTopicArgs,
+    SetTopicRequiresArgs,
 )
 from .tasks import LessonMissingError, add_tasks
 from .topic_deletions import propose_topic_deletion
@@ -61,6 +69,20 @@ MOVE_TOPIC_TOOL = {
     },
 }
 
+SET_TOPIC_REQUIRES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "set_topic_requires",
+        "description": (
+            "Set the prerequisites of a topic: the earlier topics the learner must "
+            "know first. The list replaces the current prerequisites shown as "
+            "(requires: ...) in the outline; to add or remove one, send the whole "
+            "new list."
+        ),
+        "parameters": SetTopicRequiresArgs.model_json_schema(),
+    },
+}
+
 PROPOSE_TOPIC_DELETION_TOOL = {
     "type": "function",
     "function": {
@@ -89,6 +111,7 @@ COURSE_TOOLS = [
     ADD_TOPICS_TOOL,
     RENAME_TOPIC_TOOL,
     MOVE_TOPIC_TOOL,
+    SET_TOPIC_REQUIRES_TOOL,
     PROPOSE_TOPIC_DELETION_TOOL,
     PROPOSE_COURSE_REBUILD_TOOL,
 ]
@@ -215,13 +238,33 @@ def run_course_tool(
                 if args.after_topic_id == FIRST
                 else _parse_id(args.after_topic_id)
             )
-            title = move_topic(
+            title, dropped = move_topic(
                 course_id,
                 uuid.UUID(args.topic_id),
                 _parse_id(args.parent_topic_id),
                 after,
             )
+            if dropped:
+                return (
+                    f"Moved '{title}'. Removed prerequisites that no longer fit "
+                    f"the new order: {'; '.join(dropped)}"
+                ), True
             return f"Moved '{title}'", True
+        if name == "set_topic_requires":
+            args = SetTopicRequiresArgs.model_validate_json(arguments)
+            result = set_topic_requires(
+                course_id, uuid.UUID(args.topic_id), args.requires
+            )
+            if result is None:
+                return "Error: topic not found in this course", False
+            title, kept, removed, skipped = result
+            summary = f"Prerequisites of '{title}': {', '.join(kept) or 'none'}"
+            if removed:
+                summary += f". Removed: {', '.join(removed)}"
+            if skipped:
+                reasons = "; ".join(f"{name} ({reason})" for name, reason in skipped)
+                summary += f". Not saved: {reasons}"
+            return summary, True
         if name == "propose_topic_deletion":
             args = ProposeTopicDeletionArgs.model_validate_json(arguments)
             deletion = propose_topic_deletion(course_id, uuid.UUID(args.topic_id))

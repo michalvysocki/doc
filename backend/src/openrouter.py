@@ -244,7 +244,9 @@ COURSE_CHAT_SYSTEM_PROMPT = (
     'added unless you see a "[Rebuilt course: ...]" note. When the learner asks '
     "to rename a topic or change its description, use the rename_topic tool. To "
     "move a topic (with its subtopics) or change the order of topics, use the "
-    "move_topic tool, keeping the course at most 3 levels deep. To delete a topic, "
+    "move_topic tool, keeping the course at most 3 levels deep. To add or remove "
+    "prerequisites of a topic, use the set_topic_requires tool with its whole new "
+    "list; tell the learner what was saved and what was skipped. To delete a topic, "
     "use the propose_topic_deletion tool: it deletes nothing, it shows the learner "
     "a card with what would be lost and buttons to confirm or cancel. Tell the "
     "learner to decide with the buttons. Never say a topic was deleted unless you "

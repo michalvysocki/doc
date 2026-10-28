@@ -387,7 +387,7 @@ def test_run_course_tool_moves_topic(monkeypatch, after):
 
     def fake_move(course_id, topic_id, parent_id, after_id):
         received.update(topic=topic_id, parent=parent_id, after=after_id)
-        return "Lifetimes"
+        return "Lifetimes", []
 
     monkeypatch.setattr(course_tools, "move_topic", fake_move)
     topic_id, parent_id = uuid.uuid4(), uuid.uuid4()
@@ -403,6 +403,25 @@ def test_run_course_tool_moves_topic(monkeypatch, after):
 
     assert result == ("Moved 'Lifetimes'", True)
     assert received == {"topic": topic_id, "parent": parent_id, "after": after}
+
+
+def test_move_reports_removed_prerequisites(monkeypatch):
+    monkeypatch.setattr(
+        course_tools,
+        "move_topic",
+        lambda *_: ("Lifetimes", ["Lifetimes ← References"]),
+    )
+    arguments = json.dumps(
+        {"topic_id": str(uuid.uuid4()), "parent_topic_id": None, "after_topic_id": None}
+    )
+
+    result = course_tools.run_course_tool(uuid.uuid4(), "move_topic", arguments)
+
+    removed = (
+        "Moved 'Lifetimes'. Removed prerequisites that no longer fit the new "
+        "order: Lifetimes ← References"
+    )
+    assert result == (removed, True)
 
 
 def test_run_course_tool_reports_move_error(monkeypatch):
@@ -617,3 +636,81 @@ def test_ask_with_tools_appends_sources_of_the_final_answer(monkeypatch):
 
     assert answer == "Rust 1.90 is the latest\n\n**Sources**\n- [X](https://x.dev)"
     assert changed is False
+
+
+def test_plan_with_requires_replaces_only_the_given_topic():
+    from src.courses import _plan_with_requires
+
+    a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    def topic(topic_id, title, requires=()):
+        return TopicOut(
+            id=topic_id,
+            title=title,
+            description="d",
+            has_explanation=False,
+            tasks_total=0,
+            tasks_solved=0,
+            requires=list(requires),
+            children=[],
+        )
+
+    topics = [topic(a, "Ownership"), topic(b, "References", [a]), topic(c, "X", [a])]
+
+    plan = _plan_with_requires(topics, c, [str(b)])
+    assert [(item.topic_id, item.requires) for item in plan.topics] == [
+        (str(b), [str(a)]),
+        (str(c), [str(b)]),
+    ]
+    assert [item.topic_id for item in _plan_with_requires(topics, b, []).topics] == [
+        str(c)
+    ]
+
+
+def test_skip_reason_names_the_broken_rule():
+    from src.courses import _skip_reason
+
+    module, first, second, later = (uuid.uuid4() for _ in range(4))
+    placed = [
+        ("Module", module, [], ()),
+        ("First", first, [], (module,)),
+        ("Second", second, [], (module,)),
+        ("Later", later, [], ()),
+    ]
+
+    def reason(required):
+        return _skip_reason(placed, second, required)
+
+    assert reason("x") == "not a topic of this course"
+    assert reason(str(second)) == "the topic itself"
+    assert reason(str(module)) == "a module that contains this topic"
+    assert reason(str(later)).startswith("comes later in the outline")
+    assert reason(str(first)).startswith("comes right before it")
+
+
+def test_set_topic_requires_tool_reports_saved_and_skipped(monkeypatch):
+    topic_id = uuid.uuid4()
+    calls = []
+
+    def fake(course_id, given_id, required_ids):
+        calls.append((given_id, required_ids))
+        return ("Lifetimes", ["Ownership"], ["Slices"], [("References", "why")])
+
+    monkeypatch.setattr(course_tools, "set_topic_requires", fake)
+    arguments = json.dumps({"topic_id": str(topic_id), "requires": ["x", "y"]})
+
+    result, changed = course_tools.run_course_tool(
+        uuid.uuid4(), "set_topic_requires", arguments
+    )
+
+    assert calls == [(topic_id, ["x", "y"])]
+    assert result == (
+        "Prerequisites of 'Lifetimes': Ownership. Removed: Slices. "
+        "Not saved: References (why)"
+    )
+    assert changed is True
+
+    monkeypatch.setattr(course_tools, "set_topic_requires", lambda *_: None)
+    assert course_tools.run_course_tool(
+        uuid.uuid4(), "set_topic_requires", arguments
+    ) == ("Error: topic not found in this course", False)

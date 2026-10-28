@@ -482,6 +482,7 @@ TOOL_STATUS = {
     "add_topics": "Adding topics…",
     "rename_topic": "Renaming a topic…",
     "move_topic": "Moving a topic…",
+    "set_topic_requires": "Updating prerequisites…",
     "propose_topic_deletion": "Preparing a deletion card…",
     "propose_course_rebuild": "Planning a new course map…",
     "add_subtopics": "Adding subtopics…",

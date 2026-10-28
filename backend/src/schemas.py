@@ -232,6 +232,18 @@ class MoveTopicArgs(BaseModel):
     )
 
 
+class SetTopicRequiresArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(description="Id of the topic, from the outline")
+    requires: list[str] = Field(
+        description=(
+            "Ids of all earlier topics it requires, from the outline. The list "
+            "replaces the current one; an empty list removes all"
+        )
+    )
+
+
 class RebuildPreviewNode(BaseModel):
     topic_id: uuid.UUID | None  # None = new topic
     title: str
