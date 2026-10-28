@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link, useOutletContext } from "react-router";
 import { RotateCcw } from "lucide-react";
 import CourseGoal from "./CourseGoal";
@@ -5,9 +6,18 @@ import CourseRebuildPreview from "./CourseRebuildPreview";
 import SourcesList from "./SourcesList";
 import TopicCard from "./TopicCard";
 
+function topicTitles(topics, titles = {}) {
+  for (const topic of topics) {
+    titles[topic.id] = topic.title;
+    topicTitles(topic.children, titles);
+  }
+  return titles;
+}
+
 function CourseView() {
   const { course, courseRebuild, refreshCourse } = useOutletContext();
   const { topics_total, topics_completed } = course.progress;
+  const titles = useMemo(() => topicTitles(course.topics), [course.topics]);
   const percent =
     topics_total > 0 ? Math.round((topics_completed / topics_total) * 100) : 0;
 
@@ -44,7 +54,7 @@ function CourseView() {
 
       <div className="flex flex-col gap-2 mt-4">
         {course.topics.map((topic) => (
-          <TopicCard key={topic.id} topic={topic} />
+          <TopicCard key={topic.id} topic={topic} titles={titles} />
         ))}
       </div>
 

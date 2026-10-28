@@ -162,6 +162,7 @@ class TopicDetail(BaseModel):
     description: str
     explanation: str | None
     subtopics: list[TopicLink]
+    requires: list[TopicLink] = []
     sources: list[Source] = []
 
 

@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowRight, BookCheck, ChevronRight, CircleCheck } from "lucide-react";
+import RequiredTopics from "./RequiredTopics";
 
-function TopicCard({ topic, depth = 0 }) {
+function TopicCard({ topic, titles, depth = 0 }) {
   const [isOpen, setIsOpen] = useState(false);
   const { courseId } = useParams();
   const isCompleted =
     topic.tasks_total > 0 && topic.tasks_solved === topic.tasks_total;
+  const requires = topic.requires
+    .filter((id) => id in titles)
+    .map((id) => ({ id, title: titles[id] }));
 
   return (
     <div
@@ -63,6 +67,11 @@ function TopicCard({ topic, depth = 0 }) {
         <div className="overflow-hidden">
           <div className="pl-10 pr-4 pb-3">
             <p className="type-body text-muted">{topic.description}</p>
+            <RequiredTopics
+              courseId={courseId}
+              topics={requires}
+              className="mt-2"
+            />
             <Link
               to={`/courses/${courseId}/topics/${topic.id}`}
               className="inline-flex items-center gap-1 mt-2 type-body text-accent hover:underline"
@@ -74,7 +83,12 @@ function TopicCard({ topic, depth = 0 }) {
             {topic.children.length > 0 && (
               <div className="flex flex-col gap-1 mt-3 border-l border-line pl-2">
                 {topic.children.map((child) => (
-                  <TopicCard key={child.id} topic={child} depth={depth + 1} />
+                  <TopicCard
+                    key={child.id}
+                    topic={child}
+                    titles={titles}
+                    depth={depth + 1}
+                  />
                 ))}
               </div>
             )}

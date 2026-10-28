@@ -576,6 +576,10 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
             for t in course_topics
             if t.parent_id == topic.id
         ]
+        requires = [
+            TopicLink(id=required_id, title=topics_by_id[required_id].title)
+            for required_id in links_by_topic(session, course.id).get(topic.id, [])
+        ]
 
         return TopicDetail(
             id=topic.id,
@@ -586,6 +590,7 @@ def get_topic(topic_id: uuid.UUID) -> TopicDetail | None:
             description=topic.description,
             explanation=topic.explanation,
             subtopics=subtopics,
+            requires=requires,
             sources=topic.sources or [],
         )
 

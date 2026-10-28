@@ -7,6 +7,7 @@ import {
 } from "react-router";
 import { ChevronRight } from "lucide-react";
 import useTopic from "../hooks/useTopic";
+import RequiredTopics from "../components/RequiredTopics";
 import Skeleton from "../components/Skeleton";
 
 function tabClass({ isActive }) {
@@ -54,6 +55,11 @@ function TopicLayout() {
 
       <h1 className="type-title text-ink mt-2">{topic.title}</h1>
       <p className="type-body text-muted mt-1">{topic.description}</p>
+      <RequiredTopics
+        courseId={course.id}
+        topics={topic.requires}
+        className="mt-2"
+      />
 
       <nav className="flex gap-2 mt-4 border-b border-line">
         <NavLink to="." end className={tabClass}>
