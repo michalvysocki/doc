@@ -5,7 +5,7 @@ import {
   useOutletContext,
   useParams,
 } from "react-router";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Network } from "lucide-react";
 import useTopic from "../hooks/useTopic";
 import RequiredTopics from "../components/RequiredTopics";
 import Skeleton from "../components/Skeleton";
@@ -51,6 +51,13 @@ function TopicLayout() {
             </Link>
           </span>
         ))}
+        <Link
+          to={`/courses/${course.id}?view=map&topic=${topic.id}`}
+          className="ml-auto flex items-center gap-1 type-caption hover:text-ink"
+        >
+          <Network size={14} />
+          Show on map
+        </Link>
       </nav>
 
       <h1 className="type-title text-ink mt-2">{topic.title}</h1>
