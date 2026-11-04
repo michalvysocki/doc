@@ -13,8 +13,13 @@ async function responseError(response) {
   );
 }
 
+// The login cookie is sent with every request (the API is on another port).
+function request(path, options) {
+  return fetch(`${API_URL}${path}`, { ...options, credentials: "include" });
+}
+
 export async function fetchJson(path, options) {
-  const response = await fetch(`${API_URL}${path}`, options);
+  const response = await request(path, options);
 
   if (!response.ok) throw await responseError(response);
 
@@ -25,7 +30,7 @@ export async function fetchJson(path, options) {
 
 // Reads a response streamed as JSON lines (NDJSON) and calls onEvent for every line.
 export async function streamJson(path, options, onEvent) {
-  const response = await fetch(`${API_URL}${path}`, options);
+  const response = await request(path, options);
 
   if (!response.ok) throw await responseError(response);
 

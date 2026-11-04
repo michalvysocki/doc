@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -24,6 +25,8 @@ function Sidebar({
   isLoading,
   error,
   disabled,
+  userEmail,
+  onLogout,
 }) {
   const [isOpen, setIsOpen] = useState(() => isWiderThan(768));
   const [isAboutOpen, setIsAboutOpen] = useState(false);
@@ -180,6 +183,25 @@ function Sidebar({
             isOpen={isAboutOpen}
             onToggle={() => setIsAboutOpen((prev) => !prev)}
           />
+
+          <div className="flex items-center gap-2 border-t border-line px-6 py-2">
+            <span
+              className="flex-1 min-w-0 truncate type-caption text-faint"
+              title={userEmail}
+            >
+              {userEmail}
+            </span>
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={disabled}
+              aria-label="Log out"
+              title="Log out"
+              className="p-2 rounded-md text-muted hover:text-ink hover:bg-line disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </aside>
     </>

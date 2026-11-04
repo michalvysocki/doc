@@ -7,11 +7,19 @@ import TheoryTab from "./pages/TheoryTab";
 import TasksTab from "./pages/TasksTab";
 import CourseView from "./components/CourseView";
 import ReviewPage from "./pages/ReviewPage";
+import LoginPage from "./pages/LoginPage";
+import useAuth from "./hooks/useAuth";
 
 function App() {
+  const auth = useAuth();
+
+  // Nothing is shown while the login is checked, so the login page does not flash.
+  if (auth.user === undefined) return null;
+  if (auth.user === null) return <LoginPage auth={auth} />;
+
   return (
     <Routes>
-      <Route element={<RootLayout />}>
+      <Route element={<RootLayout auth={auth} />}>
         <Route index element={<NewCoursePage />} />
         <Route path="courses/:courseId" element={<CourseLayout />}>
           <Route index element={<CourseView />} />

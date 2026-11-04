@@ -6,7 +6,7 @@ import useCreateCourse from "../hooks/useCreateCourse";
 import Sidebar from "../components/Sidebar";
 import { isWiderThan } from "../utils/screen";
 
-function RootLayout() {
+function RootLayout({ auth }) {
   const courseMatch = useMatch("/courses/:courseId/*");
   const activeCourseId = courseMatch?.params.courseId ?? null;
 
@@ -46,6 +46,8 @@ function RootLayout() {
         isLoading={coursesState.isLoading}
         error={coursesState.error}
         disabled={creation.isCreating}
+        userEmail={auth.user.email}
+        onLogout={auth.logout}
       />
 
       <Outlet

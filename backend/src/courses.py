@@ -299,6 +299,7 @@ def rename_topic(
 
 
 def save_course(
+    user_id: uuid.UUID,
     initial_prompt: str,
     topic_map: TopicMap,
     sources: list[dict[str, Any]] | None = None,
@@ -314,7 +315,7 @@ def save_course(
     course_id = uuid.uuid4()
 
     with SessionLocal() as session, session.begin():
-        course = Course(id=course_id, initial_prompt=initial_prompt)
+        course = Course(id=course_id, user_id=user_id, initial_prompt=initial_prompt)
         session.add(course)
         _add_topic_map(session, course, topic_map, sources)
 
@@ -357,6 +358,7 @@ def _placed(nodes: list[TopicNode], topics: list[Topic]) -> list[Placed]:
 
 
 def create_course_with_files(
+    user_id: uuid.UUID,
     initial_prompt: str,
     files: list[tuple[str, ParsedFile]],
     on_status: StatusCallback | None = None,
@@ -379,7 +381,10 @@ def create_course_with_files(
     with SessionLocal() as session, session.begin():
         session.add(
             Course(
-                id=course_id, title=initial_prompt[:255], initial_prompt=initial_prompt
+                id=course_id,
+                user_id=user_id,
+                title=initial_prompt[:255],
+                initial_prompt=initial_prompt,
             )
         )
 
@@ -492,9 +497,9 @@ def get_course(course_id: uuid.UUID) -> CourseOut | None:
         )
 
 
-def list_courses() -> list[CourseSummary]:
+def list_courses(user_id: uuid.UUID) -> list[CourseSummary]:
     """
-    Returns all courses without topics, newest first.
+    Returns the user's courses without topics, newest first.
     """
 
     reviews = (
@@ -512,6 +517,7 @@ def list_courses() -> list[CourseSummary]:
             func.coalesce(reviews.c.reviews_due, 0).label("reviews_due"),
         )
         .outerjoin(reviews, reviews.c.course_id == Course.id)
+        .where(Course.user_id == user_id)
         .order_by(Course.created_at.desc())
     )
 

@@ -60,7 +60,7 @@ def test_course_with_a_file_reads_it_first(monkeypatch):
     monkeypatch.setattr(
         main,
         "create_course_with_files",
-        lambda prompt, texts, on_status: course_id,
+        lambda user_id, prompt, texts, on_status: course_id,
     )
     monkeypatch.setattr(main, "get_course", fake_course)
 

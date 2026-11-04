@@ -79,6 +79,21 @@ class TopicMap(BaseModel):
     topics: list[TopicNode] = Field(description="Top-level topics")
 
 
+class Credentials(BaseModel):
+    email: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+        ),
+    ]
+    password: Annotated[str, StringConstraints(min_length=8, max_length=256)]
+
+
+class UserOut(BaseModel):
+    id: uuid.UUID
+    email: str
+
+
 class LearnerSettingsOut(BaseModel):
     about: str
 
