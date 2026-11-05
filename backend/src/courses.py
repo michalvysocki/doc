@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .file_parsing import ParsedFile
 from .learner_profile import format_learner_profile
-from .learner_settings import get_about
+from .learner_settings import course_about, get_about
 from .models import Course, Document, Task, TaskAttempt, Topic
 from .openrouter import (
     OpenRouterError,
@@ -404,7 +404,7 @@ def create_course_with_files(
             course_id, initial_prompt, with_summaries=True
         )
         topic_map, web_sources = generate_topic_map(
-            initial_prompt, materials, on_status=on_status, about=get_about()
+            initial_prompt, materials, on_status=on_status, about=get_about(user_id)
         )
 
         with SessionLocal() as session, session.begin():
@@ -678,7 +678,7 @@ def create_explanation(
         materials=materials,
         goal=course.initial_prompt if course else None,
         outline=format_course_outline(course.topics, topic.id) if course else None,
-        about=get_about(),
+        about=course_about(topic.course_id),
         learner_profile=format_learner_profile(topic.course_id),
         requires=required_titles(course.topics, topic.id) if course else None,
     )

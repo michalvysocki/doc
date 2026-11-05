@@ -39,6 +39,8 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    # The user's OpenRouter API key, encrypted with OPENROUTER_KEYS_SECRET.
+    openrouter_key: Mapped[bytes | None] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -263,14 +265,13 @@ class Chunk(Base):
 
 
 class LearnerSettings(Base):
-    """
-    Settings of the (single) learner: one row with id 1. With users and login,
-    this moves to the users table.
-    """
+    """Settings of one learner: what they wrote about themselves."""
 
     __tablename__ = "learner_settings"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     about: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

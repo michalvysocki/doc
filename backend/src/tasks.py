@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from .courses import due_condition, get_course, get_file_materials, get_topic
 from .database import SessionLocal
 from .learner_profile import format_learner_profile
-from .learner_settings import get_about
+from .learner_settings import course_about
 from .models import Task, TaskAttempt, Topic
 from .openrouter import generate_follow_up_task, generate_tasks, grade_answer
 from .outline import required_titles
@@ -176,7 +176,7 @@ def create_follow_up(attempt_id: int) -> TaskOut | None:
         answer=answer,
         verdict=verdict,
         feedback=feedback,
-        about=get_about(),
+        about=course_about(topic.course_id),
         requires=required_titles(course.topics, topic_id) if course else None,
     )
 
@@ -249,7 +249,7 @@ def create_tasks(
         instructions=instructions,
         materials=materials,
         goal=course.initial_prompt if course else None,
-        about=get_about(),
+        about=course_about(topic.course_id),
         learner_profile=format_learner_profile(topic.course_id),
     )
 

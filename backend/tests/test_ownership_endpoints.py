@@ -109,7 +109,7 @@ def test_new_course_belongs_to_the_user(client, monkeypatch):
             [],
         ),
     )
-    monkeypatch.setattr(main, "get_about", lambda: "")
+    monkeypatch.setattr(main, "get_about", lambda user_id: "")
     monkeypatch.setattr(
         main,
         "save_course",

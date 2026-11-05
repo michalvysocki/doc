@@ -36,7 +36,7 @@ def test_course_without_files_streams_statuses_then_the_course(monkeypatch):
         return TopicMap(course_title="Stats", topics=[]), []
 
     monkeypatch.setattr(main, "generate_topic_map", generate)
-    monkeypatch.setattr(main, "get_about", lambda: "")
+    monkeypatch.setattr(main, "get_about", lambda user_id: "")
     monkeypatch.setattr(main, "save_course", lambda *args: course_id)
     monkeypatch.setattr(main, "get_course", fake_course)
 

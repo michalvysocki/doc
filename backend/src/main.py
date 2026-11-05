@@ -1,3 +1,4 @@
+import contextvars
 import json
 import logging
 import os
@@ -22,7 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
+from .api_keys import get_openrouter_key, key_hint, set_openrouter_key
 from .chat import (
     ChatEvent,
     NothingToRetryError,
@@ -59,7 +62,12 @@ from .file_parsing import (
     read_upload,
 )
 from .learner_settings import get_about, set_about
-from .openrouter import OpenRouterError, StatusCallback, generate_topic_map
+from .openrouter import (
+    OpenRouterError,
+    StatusCallback,
+    current_api_key,
+    generate_topic_map,
+)
 from .ownership import (
     attempt_owner,
     course_owner,
@@ -89,6 +97,8 @@ from .schemas import (
     LearnerSettingsOut,
     LearnerSettingsUpdate,
     MessageCreate,
+    OpenRouterKeyOut,
+    OpenRouterKeyUpdate,
     PendingRegenerationOut,
     ReviewTaskOut,
     TaskOut,
@@ -163,12 +173,15 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-def current_user(
+async def current_user(
     token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
 ) -> uuid.UUID:
-    user_id = session_user(token) if token else None
+    # Async, so the key is set in the request's own context; the endpoint and
+    # its streamed response run in threads that get a copy of that context.
+    user_id = await run_in_threadpool(session_user, token) if token else None
     if user_id is None:
         raise HTTPException(status_code=401, detail="Not logged in")
+    current_api_key.set(await run_in_threadpool(get_openrouter_key, user_id))
     return user_id
 
 
@@ -350,7 +363,7 @@ def create_course(
             )
         else:
             topic_map, sources = generate_topic_map(
-                request.initial_prompt, on_status=on_status, about=get_about()
+                request.initial_prompt, on_status=on_status, about=get_about(user_id)
             )
             course_id = save_course(user_id, request.initial_prompt, topic_map, sources)
         return get_course(course_id)
@@ -385,19 +398,33 @@ def read_course_files(course_id: uuid.UUID):
 @app.get(
     "/learner-settings",
     response_model=LearnerSettingsOut,
-    dependencies=[Depends(current_user)],
 )
-def read_learner_settings():
-    return LearnerSettingsOut(about=get_about())
+def read_learner_settings(user_id: CurrentUser):
+    return LearnerSettingsOut(about=get_about(user_id))
 
 
 @app.put(
     "/learner-settings",
     response_model=LearnerSettingsOut,
-    dependencies=[Depends(current_user)],
 )
-def put_learner_settings(request: LearnerSettingsUpdate):
-    return LearnerSettingsOut(about=set_about(request.about))
+def put_learner_settings(request: LearnerSettingsUpdate, user_id: CurrentUser):
+    return LearnerSettingsOut(about=set_about(user_id, request.about))
+
+
+@app.get("/settings/openrouter-key", response_model=OpenRouterKeyOut)
+def read_openrouter_key(user_id: CurrentUser):
+    return OpenRouterKeyOut(key_hint=key_hint(get_openrouter_key(user_id)))
+
+
+@app.put("/settings/openrouter-key", response_model=OpenRouterKeyOut)
+def put_openrouter_key(request: OpenRouterKeyUpdate, user_id: CurrentUser):
+    set_openrouter_key(user_id, request.key)
+    return OpenRouterKeyOut(key_hint=key_hint(request.key))
+
+
+@app.delete("/settings/openrouter-key", status_code=204)
+def delete_openrouter_key(user_id: CurrentUser):
+    set_openrouter_key(user_id, None)
 
 
 @app.patch(
@@ -538,7 +565,10 @@ def _run_with_status(work: Callable[[StatusCallback], Any]) -> Iterator[ChatEven
                 }
             )
 
-    threading.Thread(target=run, daemon=True).start()
+    # The thread does not inherit the request's context (with the user's key) by itself.
+    threading.Thread(
+        target=contextvars.copy_context().run, args=(run,), daemon=True
+    ).start()
     while True:
         event = events.get()
         yield event

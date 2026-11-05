@@ -94,6 +94,16 @@ class UserOut(BaseModel):
     email: str
 
 
+class OpenRouterKeyUpdate(BaseModel):
+    key: Annotated[
+        str, StringConstraints(strip_whitespace=True, pattern=r"^sk-or-\S{10,200}$")
+    ]
+
+
+class OpenRouterKeyOut(BaseModel):
+    key_hint: str | None
+
+
 class LearnerSettingsOut(BaseModel):
     about: str
 

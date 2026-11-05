@@ -11,6 +11,15 @@ from src.openrouter import OpenRouterError, extract_web_sources
 REAL_STREAM = openrouter._stream_from_openrouter
 
 
+@pytest.fixture(autouse=True)
+def fake_api_key():
+    """A made-up key, so the request is built and reaches the fake requests.post."""
+
+    token = openrouter.current_api_key.set("sk-or-fake-test-key")
+    yield
+    openrouter.current_api_key.reset(token)
+
+
 class FakeStreamResponse:
     def __init__(self, lines, status_code=200, body=None):
         self.lines = lines

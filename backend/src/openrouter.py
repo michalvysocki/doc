@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from collections.abc import Callable, Iterator
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +42,6 @@ current_dir = Path(__file__).resolve().parent
 load_dotenv(current_dir.parent / ".env")
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = os.getenv("MODEL")
 # The course map and rebuild are planned once per course, so they may use a
 # stronger (more expensive) model than lessons, tasks and chats.
@@ -382,9 +382,22 @@ class OpenRouterError(Exception):
     """Raised when a request to OpenRouter fails or returns an unexpected response."""
 
 
+# The OpenRouter key of the user the current request is for (set in main.current_user).
+current_api_key: ContextVar[str | None] = ContextVar("current_api_key", default=None)
+
+
+class MissingApiKeyError(OpenRouterError):
+    """Raised when the user has not saved an OpenRouter key yet."""
+
+
 def _headers() -> dict[str, str]:
+    api_key = current_api_key.get()
+    if not api_key:
+        raise MissingApiKeyError(
+            "Add your OpenRouter API key in settings to use the models"
+        )
     return {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  KeyRound,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,6 +9,7 @@ import {
   UserRound,
 } from "lucide-react";
 import AboutMePanel from "./AboutMePanel";
+import OpenRouterKeyPanel from "./OpenRouterKeyPanel";
 import Skeleton from "./Skeleton";
 import { isWiderThan } from "../utils/screen";
 
@@ -30,6 +32,7 @@ function Sidebar({
 }) {
   const [isOpen, setIsOpen] = useState(() => isWiderThan(768));
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [isKeyOpen, setIsKeyOpen] = useState(false);
 
   // On narrow screens the overlay would cover the page the user just picked.
   function closeOnNarrow() {
@@ -79,6 +82,17 @@ function Sidebar({
               className="p-2 rounded-md text-muted hover:text-ink hover:bg-line"
             >
               <UserRound size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(true);
+                setIsKeyOpen(true);
+              }}
+              aria-label="OpenRouter key"
+              className="p-2 rounded-md text-muted hover:text-ink hover:bg-line"
+            >
+              <KeyRound size={18} />
             </button>
           </div>
         </aside>
@@ -182,6 +196,10 @@ function Sidebar({
           <AboutMePanel
             isOpen={isAboutOpen}
             onToggle={() => setIsAboutOpen((prev) => !prev)}
+          />
+          <OpenRouterKeyPanel
+            isOpen={isKeyOpen}
+            onToggle={() => setIsKeyOpen((prev) => !prev)}
           />
 
           <div className="flex items-center gap-2 border-t border-line px-6 py-2">

@@ -11,7 +11,7 @@ from .courses import (
     merge_sources,
 )
 from .database import SessionLocal
-from .learner_settings import get_about
+from .learner_settings import course_about
 from .models import Course, CourseRebuild, Document, Task, TaskAttempt, Topic
 from .openrouter import generate_rebuild_plan
 from .outline import format_outline_with_progress
@@ -130,7 +130,7 @@ def propose_course_rebuild(
         instructions=instructions,
         materials=materials,
         existing_ids=valid_ids,
-        about=get_about(),
+        about=course_about(course_id),
     )
     topics = sanitize_plan(plan.topics, valid_ids)
     if not topics:

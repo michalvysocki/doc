@@ -12,7 +12,7 @@ from .course_tools import COURSE_TOOLS, TOPIC_TOOLS, run_course_tool, run_topic_
 from .courses import get_course, get_topic
 from .database import SessionLocal
 from .learner_profile import format_learner_profile
-from .learner_settings import get_about
+from .learner_settings import course_about
 from .models import ChatMessage, Conversation, Document
 from .openrouter import (
     COURSE_CHAT_SYSTEM_PROMPT,
@@ -679,7 +679,7 @@ def send_topic_message(
     course = get_course(topic.course_id)
     outline = format_course_outline(course.topics, topic.id)
     requires = required_titles(course.topics, topic_id)
-    about = get_about()
+    about = course_about(topic.course_id)
     tasks = get_tasks(topic_id)
 
     def build(
@@ -761,7 +761,7 @@ def send_course_message(
         return None
 
     outline = course_outline_for_chat(course.topics)
-    about = get_about()
+    about = course_about(course_id)
 
     def build(
         history: list[ChatMessageOut], summary: str | None

@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+from conftest import TEST_USER_ID
 from fastapi.testclient import TestClient
 
 from src import main
@@ -10,14 +11,16 @@ client = TestClient(main.app)
 
 
 def test_read_settings_returns_the_saved_text(monkeypatch):
-    monkeypatch.setattr(main, "get_about", lambda: "ML engineer")
+    monkeypatch.setattr(main, "get_about", lambda user_id: "ML engineer")
 
     assert client.get("/learner-settings").json() == {"about": "ML engineer"}
 
 
 def test_put_settings_saves_the_stripped_text(monkeypatch):
     saved = []
-    monkeypatch.setattr(main, "set_about", lambda about: saved.append(about) or about)
+    monkeypatch.setattr(
+        main, "set_about", lambda user_id, about: saved.append(about) or about
+    )
 
     response = client.put("/learner-settings", json={"about": "  ML engineer  "})
 
@@ -25,8 +28,21 @@ def test_put_settings_saves_the_stripped_text(monkeypatch):
     assert saved == ["ML engineer"]
 
 
+def test_settings_belong_to_the_logged_in_user(monkeypatch):
+    saved = []
+    monkeypatch.setattr(
+        main, "set_about", lambda user_id, about: saved.append(user_id) or about
+    )
+    monkeypatch.setattr(main, "get_about", lambda user_id: str(user_id))
+
+    client.put("/learner-settings", json={"about": "ML engineer"})
+
+    assert saved == [TEST_USER_ID]
+    assert client.get("/learner-settings").json() == {"about": str(TEST_USER_ID)}
+
+
 def test_put_settings_allows_clearing(monkeypatch):
-    monkeypatch.setattr(main, "set_about", lambda about: about)
+    monkeypatch.setattr(main, "set_about", lambda user_id, about: about)
 
     assert client.put("/learner-settings", json={"about": ""}).status_code == 200
 
