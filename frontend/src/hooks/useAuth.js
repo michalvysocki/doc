@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchJson } from "../utils/api";
+import { fetchJson, setUnauthorizedHandler } from "../utils/api";
 
 export default function useAuth() {
   const [user, setUser] = useState(undefined); // undefined: checking, null: logged out
@@ -10,6 +10,9 @@ export default function useAuth() {
     fetchJson("/auth/me")
       .then(setUser)
       .catch(() => setUser(null));
+    // A request refused later (the session expired) shows the login form.
+    setUnauthorizedHandler(() => setUser(null));
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   // mode is "login" or "register"; both log in on success.

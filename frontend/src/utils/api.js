@@ -13,9 +13,22 @@ async function responseError(response) {
   );
 }
 
+// Called when a request is refused because the login expired (set by useAuth).
+let onUnauthorized = null;
+
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = handler;
+}
+
 // The login cookie is sent with every request (the API is on another port).
-function request(path, options) {
-  return fetch(`${API_URL}${path}`, { ...options, credentials: "include" });
+async function request(path, options) {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    credentials: "include",
+  });
+  // /auth/ answers 401 on purpose (not logged in yet, wrong password).
+  if (response.status === 401 && !path.startsWith("/auth/")) onUnauthorized?.();
+  return response;
 }
 
 export async function fetchJson(path, options) {
