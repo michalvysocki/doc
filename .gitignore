@@ -32,3 +32,5 @@ frontend/npm-debug.log*
 docker-volumes/
 # --- Local test materials ---
 test-materials/
+# --- Class report (personal data) ---
+sprawozdanie/

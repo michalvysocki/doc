@@ -1,4 +1,5 @@
-export const API_URL = "http://localhost:8000";
+// Locally the API runs on its own port; the production build sets "/api" (same address as the page).
+export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export function fileContentUrl(fileUuid) {
   return `${API_URL}/files/${fileUuid}/content`;
@@ -20,7 +21,7 @@ export function setUnauthorizedHandler(handler) {
   onUnauthorized = handler;
 }
 
-// The login cookie is sent with every request (the API is on another port).
+// The login cookie is sent with every request (locally the API is on another port).
 async function request(path, options) {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,

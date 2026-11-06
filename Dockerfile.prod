@@ -1,0 +1,20 @@
+# Production image: the API serves the built frontend from one address (see backend/src/serve.py).
+
+FROM node:24 AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN VITE_API_URL=/api npm run build
+
+FROM python:3.12
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+WORKDIR /app
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN uv sync --frozen --no-dev
+COPY backend/ ./
+COPY --from=frontend /frontend/dist ./frontend_dist
+
+# Render sets PORT; migrations run before every start (they skip what is already applied).
+ENV PORT=8000
+CMD ["sh", "-c", ".venv/bin/alembic upgrade head && exec .venv/bin/uvicorn src.serve:app --host 0.0.0.0 --port $PORT"]
